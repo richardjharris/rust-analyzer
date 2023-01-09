@@ -1,0 +1,1522 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/ide-assists/src/utils.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>utils.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../ide_assists/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
+<span id="618">618</span>
+<span id="619">619</span>
+<span id="620">620</span>
+<span id="621">621</span>
+<span id="622">622</span>
+<span id="623">623</span>
+<span id="624">624</span>
+<span id="625">625</span>
+<span id="626">626</span>
+<span id="627">627</span>
+<span id="628">628</span>
+<span id="629">629</span>
+<span id="630">630</span>
+<span id="631">631</span>
+<span id="632">632</span>
+<span id="633">633</span>
+<span id="634">634</span>
+<span id="635">635</span>
+<span id="636">636</span>
+<span id="637">637</span>
+<span id="638">638</span>
+<span id="639">639</span>
+<span id="640">640</span>
+<span id="641">641</span>
+<span id="642">642</span>
+<span id="643">643</span>
+<span id="644">644</span>
+<span id="645">645</span>
+<span id="646">646</span>
+<span id="647">647</span>
+<span id="648">648</span>
+<span id="649">649</span>
+<span id="650">650</span>
+<span id="651">651</span>
+<span id="652">652</span>
+<span id="653">653</span>
+<span id="654">654</span>
+<span id="655">655</span>
+<span id="656">656</span>
+<span id="657">657</span>
+<span id="658">658</span>
+<span id="659">659</span>
+<span id="660">660</span>
+<span id="661">661</span>
+<span id="662">662</span>
+<span id="663">663</span>
+<span id="664">664</span>
+<span id="665">665</span>
+<span id="666">666</span>
+<span id="667">667</span>
+<span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
+<span id="674">674</span>
+<span id="675">675</span>
+<span id="676">676</span>
+<span id="677">677</span>
+<span id="678">678</span>
+<span id="679">679</span>
+<span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
+<span id="743">743</span>
+<span id="744">744</span>
+<span id="745">745</span>
+<span id="746">746</span>
+<span id="747">747</span>
+<span id="748">748</span>
+<span id="749">749</span>
+<span id="750">750</span>
+<span id="751">751</span>
+<span id="752">752</span>
+<span id="753">753</span>
+<span id="754">754</span>
+<span id="755">755</span>
+<span id="756">756</span>
+<span id="757">757</span>
+<span id="758">758</span>
+<span id="759">759</span>
+<span id="760">760</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Assorted functions shared by several assists.
+
+</span><span class="kw">use </span>std::ops;
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span>gen_trait_fn_body::gen_trait_fn_body;
+<span class="kw">use </span>hir::{db::HirDatabase, HirDisplay, Semantics};
+<span class="kw">use </span>ide_db::{famous_defs::FamousDefs, path_transform::PathTransform, RootDatabase, SnippetCap};
+<span class="kw">use </span>stdx::format_to;
+<span class="kw">use </span>syntax::{
+    ast::{
+        <span class="self">self</span>,
+        edit::{<span class="self">self</span>, AstNodeEdit},
+        edit_in_place::{AttrsOwnerEdit, Removable},
+        make, HasArgList, HasAttrs, HasGenericParams, HasName, HasTypeBounds, Whitespace,
+    },
+    ted, AstNode, AstToken, Direction, SourceFile,
+    SyntaxKind::<span class="kw-2">*</span>,
+    SyntaxNode, TextRange, TextSize, T,
+};
+
+<span class="kw">use </span><span class="kw">crate</span>::assist_context::{AssistContext, SourceChangeBuilder};
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>suggest_name;
+<span class="kw">mod </span>gen_trait_fn_body;
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>unwrap_trivial_block(block_expr: ast::BlockExpr) -&gt; ast::Expr {
+    extract_trivial_expression(<span class="kw-2">&amp;</span>block_expr)
+        .filter(|expr| !expr.syntax().text().contains_char(<span class="string">&#39;\n&#39;</span>))
+        .unwrap_or_else(|| block_expr.into())
+}
+
+<span class="kw">pub fn </span>extract_trivial_expression(block_expr: <span class="kw-2">&amp;</span>ast::BlockExpr) -&gt; <span class="prelude-ty">Option</span>&lt;ast::Expr&gt; {
+    <span class="kw">if </span>block_expr.modifier().is_some() {
+        <span class="kw">return </span><span class="prelude-val">None</span>;
+    }
+    <span class="kw">let </span>stmt_list = block_expr.stmt_list()<span class="question-mark">?</span>;
+    <span class="kw">let </span>has_anything_else = |thing: <span class="kw-2">&amp;</span>SyntaxNode| -&gt; bool {
+        <span class="kw">let </span><span class="kw-2">mut </span>non_trivial_children =
+            stmt_list.syntax().children_with_tokens().filter(|it| <span class="kw">match </span>it.kind() {
+                WHITESPACE | <span class="macro">T!</span>[<span class="string">&#39;{&#39;</span>] | <span class="macro">T!</span>[<span class="string">&#39;}&#39;</span>] =&gt; <span class="bool-val">false</span>,
+                <span class="kw">_ </span>=&gt; it.as_node() != <span class="prelude-val">Some</span>(thing),
+            });
+        non_trivial_children.next().is_some()
+    };
+
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(expr) = stmt_list.tail_expr() {
+        <span class="kw">if </span>has_anything_else(expr.syntax()) {
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        }
+        <span class="kw">return </span><span class="prelude-val">Some</span>(expr);
+    }
+    <span class="comment">// Unwrap `{ continue; }`
+    </span><span class="kw">let </span>stmt = stmt_list.statements().next()<span class="question-mark">?</span>;
+    <span class="kw">if let </span>ast::Stmt::ExprStmt(expr_stmt) = stmt {
+        <span class="kw">if </span>has_anything_else(expr_stmt.syntax()) {
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        }
+        <span class="kw">let </span>expr = expr_stmt.expr()<span class="question-mark">?</span>;
+        <span class="kw">if </span><span class="macro">matches!</span>(expr.syntax().kind(), CONTINUE_EXPR | BREAK_EXPR | RETURN_EXPR) {
+            <span class="kw">return </span><span class="prelude-val">Some</span>(expr);
+        }
+    }
+    <span class="prelude-val">None
+</span>}
+
+<span class="doccomment">/// This is a method with a heuristics to support test methods annotated with custom test annotations, such as
+/// `#[test_case(...)]`, `#[tokio::test]` and similar.
+/// Also a regular `#[test]` annotation is supported.
+///
+/// It may produce false positives, for example, `#[wasm_bindgen_test]` requires a different command to run the test,
+/// but it&#39;s better than not to have the runnables for the tests at all.
+</span><span class="kw">pub fn </span>test_related_attribute(fn_def: <span class="kw-2">&amp;</span>ast::Fn) -&gt; <span class="prelude-ty">Option</span>&lt;ast::Attr&gt; {
+    fn_def.attrs().find_map(|attr| {
+        <span class="kw">let </span>path = attr.path()<span class="question-mark">?</span>;
+        <span class="kw">let </span>text = path.syntax().text().to_string();
+        <span class="kw">if </span>text.starts_with(<span class="string">&quot;test&quot;</span>) || text.ends_with(<span class="string">&quot;test&quot;</span>) {
+            <span class="prelude-val">Some</span>(attr)
+        } <span class="kw">else </span>{
+            <span class="prelude-val">None
+        </span>}
+    })
+}
+
+<span class="attribute">#[derive(Copy, Clone, PartialEq)]
+</span><span class="kw">pub enum </span>DefaultMethods {
+    Only,
+    No,
+}
+
+<span class="kw">pub fn </span>filter_assoc_items(
+    sema: <span class="kw-2">&amp;</span>Semantics&lt;<span class="lifetime">&#39;_</span>, RootDatabase&gt;,
+    items: <span class="kw-2">&amp;</span>[hir::AssocItem],
+    default_methods: DefaultMethods,
+) -&gt; Vec&lt;ast::AssocItem&gt; {
+    <span class="kw">fn </span>has_def_name(item: <span class="kw-2">&amp;</span>ast::AssocItem) -&gt; bool {
+        <span class="kw">match </span>item {
+            ast::AssocItem::Fn(def) =&gt; def.name(),
+            ast::AssocItem::TypeAlias(def) =&gt; def.name(),
+            ast::AssocItem::Const(def) =&gt; def.name(),
+            ast::AssocItem::MacroCall(<span class="kw">_</span>) =&gt; <span class="prelude-val">None</span>,
+        }
+        .is_some()
+    }
+
+    items
+        .iter()
+        <span class="comment">// Note: This throws away items with no source.
+        </span>.filter_map(|<span class="kw-2">&amp;</span>i| {
+            <span class="kw">let </span>item = <span class="kw">match </span>i {
+                hir::AssocItem::Function(i) =&gt; ast::AssocItem::Fn(sema.source(i)<span class="question-mark">?</span>.value),
+                hir::AssocItem::TypeAlias(i) =&gt; ast::AssocItem::TypeAlias(sema.source(i)<span class="question-mark">?</span>.value),
+                hir::AssocItem::Const(i) =&gt; ast::AssocItem::Const(sema.source(i)<span class="question-mark">?</span>.value),
+            };
+            <span class="prelude-val">Some</span>(item)
+        })
+        .filter(has_def_name)
+        .filter(|it| <span class="kw">match </span>it {
+            ast::AssocItem::Fn(def) =&gt; <span class="macro">matches!</span>(
+                (default_methods, def.body()),
+                (DefaultMethods::Only, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) | (DefaultMethods::No, <span class="prelude-val">None</span>)
+            ),
+            ast::AssocItem::Const(def) =&gt; <span class="macro">matches!</span>(
+                (default_methods, def.body()),
+                (DefaultMethods::Only, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) | (DefaultMethods::No, <span class="prelude-val">None</span>)
+            ),
+            <span class="kw">_ </span>=&gt; default_methods == DefaultMethods::No,
+        })
+        .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;()
+}
+
+<span class="kw">pub fn </span>add_trait_assoc_items_to_impl(
+    sema: <span class="kw-2">&amp;</span>Semantics&lt;<span class="lifetime">&#39;_</span>, RootDatabase&gt;,
+    items: Vec&lt;ast::AssocItem&gt;,
+    trait_: hir::Trait,
+    impl_: ast::Impl,
+    target_scope: hir::SemanticsScope&lt;<span class="lifetime">&#39;_</span>&gt;,
+) -&gt; (ast::Impl, ast::AssocItem) {
+    <span class="kw">let </span>source_scope = sema.scope_for_def(trait_);
+
+    <span class="kw">let </span>transform = PathTransform::trait_impl(<span class="kw-2">&amp;</span>target_scope, <span class="kw-2">&amp;</span>source_scope, trait_, impl_.clone());
+
+    <span class="kw">let </span>items = items.into_iter().map(|assoc_item| {
+        transform.apply(assoc_item.syntax());
+        assoc_item.remove_attrs_and_docs();
+        assoc_item
+    });
+
+    <span class="kw">let </span>res = impl_.clone_for_update();
+
+    <span class="kw">let </span>assoc_item_list = res.get_or_create_assoc_item_list();
+    <span class="kw">let </span><span class="kw-2">mut </span>first_item = <span class="prelude-val">None</span>;
+    <span class="kw">for </span>item <span class="kw">in </span>items {
+        first_item.get_or_insert_with(|| item.clone());
+        <span class="kw">match </span><span class="kw-2">&amp;</span>item {
+            ast::AssocItem::Fn(fn_) <span class="kw">if </span>fn_.body().is_none() =&gt; {
+                <span class="kw">let </span>body = make::block_expr(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(make::ext::expr_todo()))
+                    .indent(edit::IndentLevel(<span class="number">1</span>));
+                ted::replace(fn_.get_or_create_body().syntax(), body.clone_for_update().syntax())
+            }
+            ast::AssocItem::TypeAlias(type_alias) =&gt; {
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(type_bound_list) = type_alias.type_bound_list() {
+                    type_bound_list.remove()
+                }
+            }
+            <span class="kw">_ </span>=&gt; {}
+        }
+
+        assoc_item_list.add_item(item)
+    }
+
+    (res, first_item.unwrap())
+}
+
+<span class="attribute">#[derive(Clone, Copy, Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>Cursor&lt;<span class="lifetime">&#39;a</span>&gt; {
+    Replace(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>SyntaxNode),
+    Before(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>SyntaxNode),
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>&gt; Cursor&lt;<span class="lifetime">&#39;a</span>&gt; {
+    <span class="kw">fn </span>node(<span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>SyntaxNode {
+        <span class="kw">match </span><span class="self">self </span>{
+            Cursor::Replace(node) | Cursor::Before(node) =&gt; node,
+        }
+    }
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>render_snippet(_cap: SnippetCap, node: <span class="kw-2">&amp;</span>SyntaxNode, cursor: Cursor&lt;<span class="lifetime">&#39;_</span>&gt;) -&gt; String {
+    <span class="macro">assert!</span>(cursor.node().ancestors().any(|it| it == <span class="kw-2">*</span>node));
+    <span class="kw">let </span>range = cursor.node().text_range() - node.text_range().start();
+    <span class="kw">let </span>range: ops::Range&lt;usize&gt; = range.into();
+
+    <span class="kw">let </span><span class="kw-2">mut </span>placeholder = cursor.node().to_string();
+    escape(<span class="kw-2">&amp;mut </span>placeholder);
+    <span class="kw">let </span>tab_stop = <span class="kw">match </span>cursor {
+        Cursor::Replace(placeholder) =&gt; <span class="macro">format!</span>(<span class="string">&quot;${{0:{placeholder}}}&quot;</span>),
+        Cursor::Before(placeholder) =&gt; <span class="macro">format!</span>(<span class="string">&quot;$0{placeholder}&quot;</span>),
+    };
+
+    <span class="kw">let </span><span class="kw-2">mut </span>buf = node.to_string();
+    buf.replace_range(range, <span class="kw-2">&amp;</span>tab_stop);
+    <span class="kw">return </span>buf;
+
+    <span class="kw">fn </span>escape(buf: <span class="kw-2">&amp;mut </span>String) {
+        stdx::replace(buf, <span class="string">&#39;{&#39;</span>, <span class="string">r&quot;\{&quot;</span>);
+        stdx::replace(buf, <span class="string">&#39;}&#39;</span>, <span class="string">r&quot;\}&quot;</span>);
+        stdx::replace(buf, <span class="string">&#39;$&#39;</span>, <span class="string">r&quot;\$&quot;</span>);
+    }
+}
+
+<span class="doccomment">/// Escapes text that should be rendered as-is, typically those that we&#39;re copy-pasting what the
+/// users wrote.
+///
+/// This function should only be used when the text doesn&#39;t contain snippet **AND** the text
+/// wouldn&#39;t be included in a snippet.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>escape_non_snippet(text: <span class="kw-2">&amp;mut </span>String) {
+    <span class="comment">// While we *can* escape `}`, we don&#39;t really have to in this specific case. We only need to
+    // escape it inside `${}` to disambiguate it from the ending token of the syntax, but after we
+    // escape every occurrence of `$`, we wouldn&#39;t have `${}` in the first place.
+    //
+    // This will break if the text contains snippet or it will be included in a snippet (hence doc
+    // comment). Compare `fn escape(buf)` in `render_snippet()` above, where the escaped text is
+    // included in a snippet.
+    </span>stdx::replace(text, <span class="string">&#39;\\&#39;</span>, <span class="string">r&quot;\\&quot;</span>);
+    stdx::replace(text, <span class="string">&#39;$&#39;</span>, <span class="string">r&quot;\$&quot;</span>);
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>vis_offset(node: <span class="kw-2">&amp;</span>SyntaxNode) -&gt; TextSize {
+    node.children_with_tokens()
+        .find(|it| !<span class="macro">matches!</span>(it.kind(), WHITESPACE | COMMENT | ATTR))
+        .map(|it| it.text_range().start())
+        .unwrap_or_else(|| node.text_range().start())
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>invert_boolean_expression(expr: ast::Expr) -&gt; ast::Expr {
+    invert_special_case(<span class="kw-2">&amp;</span>expr).unwrap_or_else(|| make::expr_prefix(<span class="macro">T!</span>[!], expr))
+}
+
+<span class="kw">fn </span>invert_special_case(expr: <span class="kw-2">&amp;</span>ast::Expr) -&gt; <span class="prelude-ty">Option</span>&lt;ast::Expr&gt; {
+    <span class="kw">match </span>expr {
+        ast::Expr::BinExpr(bin) =&gt; {
+            <span class="kw">let </span>bin = bin.clone_for_update();
+            <span class="kw">let </span>op_token = bin.op_token()<span class="question-mark">?</span>;
+            <span class="kw">let </span>rev_token = <span class="kw">match </span>op_token.kind() {
+                <span class="macro">T!</span>[==] =&gt; <span class="macro">T!</span>[!=],
+                <span class="macro">T!</span>[!=] =&gt; <span class="macro">T!</span>[==],
+                <span class="macro">T!</span>[&lt;] =&gt; <span class="macro">T!</span>[&gt;=],
+                <span class="macro">T!</span>[&lt;=] =&gt; <span class="macro">T!</span>[&gt;],
+                <span class="macro">T!</span>[&gt;] =&gt; <span class="macro">T!</span>[&lt;=],
+                <span class="macro">T!</span>[&gt;=] =&gt; <span class="macro">T!</span>[&lt;],
+                <span class="comment">// Parenthesize other expressions before prefixing `!`
+                </span><span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">Some</span>(make::expr_prefix(<span class="macro">T!</span>[!], make::expr_paren(expr.clone()))),
+            };
+            ted::replace(op_token, make::token(rev_token));
+            <span class="prelude-val">Some</span>(bin.into())
+        }
+        ast::Expr::MethodCallExpr(mce) =&gt; {
+            <span class="kw">let </span>receiver = mce.receiver()<span class="question-mark">?</span>;
+            <span class="kw">let </span>method = mce.name_ref()<span class="question-mark">?</span>;
+            <span class="kw">let </span>arg_list = mce.arg_list()<span class="question-mark">?</span>;
+
+            <span class="kw">let </span>method = <span class="kw">match </span>method.text().as_str() {
+                <span class="string">&quot;is_some&quot; </span>=&gt; <span class="string">&quot;is_none&quot;</span>,
+                <span class="string">&quot;is_none&quot; </span>=&gt; <span class="string">&quot;is_some&quot;</span>,
+                <span class="string">&quot;is_ok&quot; </span>=&gt; <span class="string">&quot;is_err&quot;</span>,
+                <span class="string">&quot;is_err&quot; </span>=&gt; <span class="string">&quot;is_ok&quot;</span>,
+                <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+            };
+            <span class="prelude-val">Some</span>(make::expr_method_call(receiver, make::name_ref(method), arg_list))
+        }
+        ast::Expr::PrefixExpr(pe) <span class="kw">if </span>pe.op_kind()<span class="question-mark">? </span>== ast::UnaryOp::Not =&gt; <span class="kw">match </span>pe.expr()<span class="question-mark">? </span>{
+            ast::Expr::ParenExpr(parexpr) =&gt; parexpr.expr(),
+            <span class="kw">_ </span>=&gt; pe.expr(),
+        },
+        ast::Expr::Literal(lit) =&gt; <span class="kw">match </span>lit.kind() {
+            ast::LiteralKind::Bool(b) =&gt; <span class="kw">match </span>b {
+                <span class="bool-val">true </span>=&gt; <span class="prelude-val">Some</span>(ast::Expr::Literal(make::expr_literal(<span class="string">&quot;false&quot;</span>))),
+                <span class="bool-val">false </span>=&gt; <span class="prelude-val">Some</span>(ast::Expr::Literal(make::expr_literal(<span class="string">&quot;true&quot;</span>))),
+            },
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        },
+        <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+    }
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>next_prev() -&gt; <span class="kw">impl </span>Iterator&lt;Item = Direction&gt; {
+    [Direction::Next, Direction::Prev].into_iter()
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>does_pat_match_variant(pat: <span class="kw-2">&amp;</span>ast::Pat, var: <span class="kw-2">&amp;</span>ast::Pat) -&gt; bool {
+    <span class="kw">let </span>first_node_text = |pat: <span class="kw-2">&amp;</span>ast::Pat| pat.syntax().first_child().map(|node| node.text());
+
+    <span class="kw">let </span>pat_head = <span class="kw">match </span>pat {
+        ast::Pat::IdentPat(bind_pat) =&gt; <span class="kw">match </span>bind_pat.pat() {
+            <span class="prelude-val">Some</span>(p) =&gt; first_node_text(<span class="kw-2">&amp;</span>p),
+            <span class="prelude-val">None </span>=&gt; <span class="kw">return </span>pat.syntax().text() == var.syntax().text(),
+        },
+        pat =&gt; first_node_text(pat),
+    };
+
+    <span class="kw">let </span>var_head = first_node_text(var);
+
+    pat_head == var_head
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>does_nested_pattern(pat: <span class="kw-2">&amp;</span>ast::Pat) -&gt; bool {
+    <span class="kw">let </span>depth = calc_depth(pat, <span class="number">0</span>);
+
+    <span class="kw">if </span><span class="number">1 </span>&lt; depth {
+        <span class="kw">return </span><span class="bool-val">true</span>;
+    }
+    <span class="bool-val">false
+</span>}
+
+<span class="kw">fn </span>calc_depth(pat: <span class="kw-2">&amp;</span>ast::Pat, depth: usize) -&gt; usize {
+    <span class="kw">match </span>pat {
+        ast::Pat::IdentPat(<span class="kw">_</span>)
+        | ast::Pat::BoxPat(<span class="kw">_</span>)
+        | ast::Pat::RestPat(<span class="kw">_</span>)
+        | ast::Pat::LiteralPat(<span class="kw">_</span>)
+        | ast::Pat::MacroPat(<span class="kw">_</span>)
+        | ast::Pat::OrPat(<span class="kw">_</span>)
+        | ast::Pat::ParenPat(<span class="kw">_</span>)
+        | ast::Pat::PathPat(<span class="kw">_</span>)
+        | ast::Pat::WildcardPat(<span class="kw">_</span>)
+        | ast::Pat::RangePat(<span class="kw">_</span>)
+        | ast::Pat::RecordPat(<span class="kw">_</span>)
+        | ast::Pat::RefPat(<span class="kw">_</span>)
+        | ast::Pat::SlicePat(<span class="kw">_</span>)
+        | ast::Pat::TuplePat(<span class="kw">_</span>)
+        | ast::Pat::ConstBlockPat(<span class="kw">_</span>) =&gt; depth,
+
+        <span class="comment">// FIXME: Other patterns may also be nested. Currently it simply supports only `TupleStructPat`
+        </span>ast::Pat::TupleStructPat(pat) =&gt; {
+            <span class="kw">let </span><span class="kw-2">mut </span>max_depth = depth;
+            <span class="kw">for </span>p <span class="kw">in </span>pat.fields() {
+                <span class="kw">let </span>d = calc_depth(<span class="kw-2">&amp;</span>p, depth + <span class="number">1</span>);
+                <span class="kw">if </span>d &gt; max_depth {
+                    max_depth = d
+                }
+            }
+            max_depth
+        }
+    }
+}
+
+<span class="comment">// Uses a syntax-driven approach to find any impl blocks for the struct that
+// exist within the module/file
+//
+// Returns `None` if we&#39;ve found an existing fn
+//
+// FIXME: change the new fn checking to a more semantic approach when that&#39;s more
+// viable (e.g. we process proc macros, etc)
+// FIXME: this partially overlaps with `find_impl_block_*`
+
+</span><span class="doccomment">/// `find_struct_impl` looks for impl of a struct, but this also has additional feature
+/// where it takes a list of function names and check if they exist inside impl_, if
+/// even one match is found, it returns None
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>find_struct_impl(
+    ctx: <span class="kw-2">&amp;</span>AssistContext&lt;<span class="lifetime">&#39;_</span>&gt;,
+    adt: <span class="kw-2">&amp;</span>ast::Adt,
+    names: <span class="kw-2">&amp;</span>[String],
+) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="prelude-ty">Option</span>&lt;ast::Impl&gt;&gt; {
+    <span class="kw">let </span>db = ctx.db();
+    <span class="kw">let </span>module = adt.syntax().parent()<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>struct_def = ctx.sema.to_def(adt)<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>block = module.descendants().filter_map(ast::Impl::cast).find_map(|impl_blk| {
+        <span class="kw">let </span>blk = ctx.sema.to_def(<span class="kw-2">&amp;</span>impl_blk)<span class="question-mark">?</span>;
+
+        <span class="comment">// FIXME: handle e.g. `struct S&lt;T&gt;; impl&lt;U&gt; S&lt;U&gt; {}`
+        // (we currently use the wrong type parameter)
+        // also we wouldn&#39;t want to use e.g. `impl S&lt;u32&gt;`
+
+        </span><span class="kw">let </span>same_ty = <span class="kw">match </span>blk.self_ty(db).as_adt() {
+            <span class="prelude-val">Some</span>(def) =&gt; def == struct_def,
+            <span class="prelude-val">None </span>=&gt; <span class="bool-val">false</span>,
+        };
+        <span class="kw">let </span>not_trait_impl = blk.trait_(db).is_none();
+
+        <span class="kw">if </span>!(same_ty &amp;&amp; not_trait_impl) {
+            <span class="prelude-val">None
+        </span>} <span class="kw">else </span>{
+            <span class="prelude-val">Some</span>(impl_blk)
+        }
+    });
+
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref </span>impl_blk) = block {
+        <span class="kw">if </span>has_any_fn(impl_blk, names) {
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        }
+    }
+
+    <span class="prelude-val">Some</span>(block)
+}
+
+<span class="kw">fn </span>has_any_fn(imp: <span class="kw-2">&amp;</span>ast::Impl, names: <span class="kw-2">&amp;</span>[String]) -&gt; bool {
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(il) = imp.assoc_item_list() {
+        <span class="kw">for </span>item <span class="kw">in </span>il.assoc_items() {
+            <span class="kw">if let </span>ast::AssocItem::Fn(f) = item {
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(name) = f.name() {
+                    <span class="kw">if </span>names.iter().any(|n| n.eq_ignore_ascii_case(<span class="kw-2">&amp;</span>name.text())) {
+                        <span class="kw">return </span><span class="bool-val">true</span>;
+                    }
+                }
+            }
+        }
+    }
+
+    <span class="bool-val">false
+</span>}
+
+<span class="doccomment">/// Find the start of the `impl` block for the given `ast::Impl`.
+</span><span class="comment">//
+// FIXME: this partially overlaps with `find_struct_impl`
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>find_impl_block_start(impl_def: ast::Impl, buf: <span class="kw-2">&amp;mut </span>String) -&gt; <span class="prelude-ty">Option</span>&lt;TextSize&gt; {
+    buf.push(<span class="string">&#39;\n&#39;</span>);
+    <span class="kw">let </span>start = impl_def.assoc_item_list().and_then(|it| it.l_curly_token())<span class="question-mark">?</span>.text_range().end();
+    <span class="prelude-val">Some</span>(start)
+}
+
+<span class="doccomment">/// Find the end of the `impl` block for the given `ast::Impl`.
+</span><span class="comment">//
+// FIXME: this partially overlaps with `find_struct_impl`
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>find_impl_block_end(impl_def: ast::Impl, buf: <span class="kw-2">&amp;mut </span>String) -&gt; <span class="prelude-ty">Option</span>&lt;TextSize&gt; {
+    buf.push(<span class="string">&#39;\n&#39;</span>);
+    <span class="kw">let </span>end = impl_def
+        .assoc_item_list()
+        .and_then(|it| it.r_curly_token())<span class="question-mark">?
+        </span>.prev_sibling_or_token()<span class="question-mark">?
+        </span>.text_range()
+        .end();
+    <span class="prelude-val">Some</span>(end)
+}
+
+<span class="doccomment">/// Generates the surrounding `impl Type { &lt;code&gt; }` including type and lifetime
+/// parameters.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>generate_impl_text(adt: <span class="kw-2">&amp;</span>ast::Adt, code: <span class="kw-2">&amp;</span>str) -&gt; String {
+    generate_impl_text_inner(adt, <span class="prelude-val">None</span>, <span class="bool-val">true</span>, code)
+}
+
+<span class="doccomment">/// Generates the surrounding `impl &lt;trait&gt; for Type { &lt;code&gt; }` including type
+/// and lifetime parameters, with `&lt;trait&gt;` appended to `impl`&#39;s generic parameters&#39; bounds.
+///
+/// This is useful for traits like `PartialEq`, since `impl&lt;T&gt; PartialEq for U&lt;T&gt;` often requires `T: PartialEq`.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>generate_trait_impl_text(adt: <span class="kw-2">&amp;</span>ast::Adt, trait_text: <span class="kw-2">&amp;</span>str, code: <span class="kw-2">&amp;</span>str) -&gt; String {
+    generate_impl_text_inner(adt, <span class="prelude-val">Some</span>(trait_text), <span class="bool-val">true</span>, code)
+}
+
+<span class="doccomment">/// Generates the surrounding `impl &lt;trait&gt; for Type { &lt;code&gt; }` including type
+/// and lifetime parameters, with `impl`&#39;s generic parameters&#39; bounds kept as-is.
+///
+/// This is useful for traits like `From&lt;T&gt;`, since `impl&lt;T&gt; From&lt;T&gt; for U&lt;T&gt;` doesn&#39;t require `T: From&lt;T&gt;`.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>generate_trait_impl_text_intransitive(
+    adt: <span class="kw-2">&amp;</span>ast::Adt,
+    trait_text: <span class="kw-2">&amp;</span>str,
+    code: <span class="kw-2">&amp;</span>str,
+) -&gt; String {
+    generate_impl_text_inner(adt, <span class="prelude-val">Some</span>(trait_text), <span class="bool-val">false</span>, code)
+}
+
+<span class="kw">fn </span>generate_impl_text_inner(
+    adt: <span class="kw-2">&amp;</span>ast::Adt,
+    trait_text: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+    trait_is_transitive: bool,
+    code: <span class="kw-2">&amp;</span>str,
+) -&gt; String {
+    <span class="comment">// Ensure lifetime params are before type &amp; const params
+    </span><span class="kw">let </span>generic_params = adt.generic_param_list().map(|generic_params| {
+        <span class="kw">let </span>lifetime_params =
+            generic_params.lifetime_params().map(ast::GenericParam::LifetimeParam);
+        <span class="kw">let </span>ty_or_const_params = generic_params.type_or_const_params().map(|param| {
+            <span class="kw">match </span>param {
+                ast::TypeOrConstParam::Type(param) =&gt; {
+                    <span class="kw">let </span>param = param.clone_for_update();
+                    <span class="comment">// remove defaults since they can&#39;t be specified in impls
+                    </span>param.remove_default();
+                    <span class="kw">let </span><span class="kw-2">mut </span>bounds =
+                        param.type_bound_list().map_or_else(Vec::new, |it| it.bounds().collect());
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(trait_) = trait_text {
+                        <span class="comment">// Add the current trait to `bounds` if the trait is transitive,
+                        // meaning `impl&lt;T&gt; Trait for U&lt;T&gt;` requires `T: Trait`.
+                        </span><span class="kw">if </span>trait_is_transitive {
+                            bounds.push(make::type_bound(trait_));
+                        }
+                    };
+                    <span class="comment">// `{ty_param}: {bounds}`
+                    </span><span class="kw">let </span>param =
+                        make::type_param(param.name().unwrap(), make::type_bound_list(bounds));
+                    ast::GenericParam::TypeParam(param)
+                }
+                ast::TypeOrConstParam::Const(param) =&gt; {
+                    <span class="kw">let </span>param = param.clone_for_update();
+                    <span class="comment">// remove defaults since they can&#39;t be specified in impls
+                    </span>param.remove_default();
+                    ast::GenericParam::ConstParam(param)
+                }
+            }
+        });
+
+        make::generic_param_list(itertools::chain(lifetime_params, ty_or_const_params))
+    });
+
+    <span class="comment">// FIXME: use syntax::make &amp; mutable AST apis instead
+    // `trait_text` and `code` can&#39;t be opaque blobs of text
+    </span><span class="kw">let </span><span class="kw-2">mut </span>buf = String::with_capacity(code.len());
+
+    <span class="comment">// Copy any cfg attrs from the original adt
+    </span>buf.push_str(<span class="string">&quot;\n\n&quot;</span>);
+    <span class="kw">let </span>cfg_attrs = adt
+        .attrs()
+        .filter(|attr| attr.as_simple_call().map(|(name, _arg)| name == <span class="string">&quot;cfg&quot;</span>).unwrap_or(<span class="bool-val">false</span>));
+    cfg_attrs.for_each(|attr| buf.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;{attr}\n&quot;</span>)));
+
+    <span class="comment">// `impl{generic_params} {trait_text} for {name}{generic_params.to_generic_args()}`
+    </span>buf.push_str(<span class="string">&quot;impl&quot;</span>);
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(generic_params) = <span class="kw-2">&amp;</span>generic_params {
+        <span class="macro">format_to!</span>(buf, <span class="string">&quot;{generic_params}&quot;</span>);
+    }
+    buf.push(<span class="string">&#39; &#39;</span>);
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(trait_text) = trait_text {
+        buf.push_str(trait_text);
+        buf.push_str(<span class="string">&quot; for &quot;</span>);
+    }
+    buf.push_str(<span class="kw-2">&amp;</span>adt.name().unwrap().text());
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(generic_params) = generic_params {
+        <span class="macro">format_to!</span>(buf, <span class="string">&quot;{}&quot;</span>, generic_params.to_generic_args());
+    }
+
+    <span class="kw">match </span>adt.where_clause() {
+        <span class="prelude-val">Some</span>(where_clause) =&gt; {
+            <span class="macro">format_to!</span>(buf, <span class="string">&quot;\n{where_clause}\n{{\n{code}\n}}&quot;</span>);
+        }
+        <span class="prelude-val">None </span>=&gt; {
+            <span class="macro">format_to!</span>(buf, <span class="string">&quot; {{\n{code}\n}}&quot;</span>);
+        }
+    }
+
+    buf
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>add_method_to_adt(
+    builder: <span class="kw-2">&amp;mut </span>SourceChangeBuilder,
+    adt: <span class="kw-2">&amp;</span>ast::Adt,
+    impl_def: <span class="prelude-ty">Option</span>&lt;ast::Impl&gt;,
+    method: <span class="kw-2">&amp;</span>str,
+) {
+    <span class="kw">let </span><span class="kw-2">mut </span>buf = String::with_capacity(method.len() + <span class="number">2</span>);
+    <span class="kw">if </span>impl_def.is_some() {
+        buf.push(<span class="string">&#39;\n&#39;</span>);
+    }
+    buf.push_str(method);
+
+    <span class="kw">let </span>start_offset = impl_def
+        .and_then(|impl_def| find_impl_block_end(impl_def, <span class="kw-2">&amp;mut </span>buf))
+        .unwrap_or_else(|| {
+            buf = generate_impl_text(adt, <span class="kw-2">&amp;</span>buf);
+            adt.syntax().text_range().end()
+        });
+
+    builder.insert(start_offset, buf);
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>ReferenceConversion {
+    conversion: ReferenceConversionType,
+    ty: hir::Type,
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">enum </span>ReferenceConversionType {
+    <span class="comment">// reference can be stripped if the type is Copy
+    </span>Copy,
+    <span class="comment">// &amp;String -&gt; &amp;str
+    </span>AsRefStr,
+    <span class="comment">// &amp;Vec&lt;T&gt; -&gt; &amp;[T]
+    </span>AsRefSlice,
+    <span class="comment">// &amp;Box&lt;T&gt; -&gt; &amp;T
+    </span>Dereferenced,
+    <span class="comment">// &amp;Option&lt;T&gt; -&gt; Option&lt;&amp;T&gt;
+    </span><span class="prelude-ty">Option</span>,
+    <span class="comment">// &amp;Result&lt;T, E&gt; -&gt; Result&lt;&amp;T, &amp;E&gt;
+    </span><span class="prelude-ty">Result</span>,
+}
+
+<span class="kw">impl </span>ReferenceConversion {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>convert_type(<span class="kw-2">&amp;</span><span class="self">self</span>, db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase) -&gt; String {
+        <span class="kw">match </span><span class="self">self</span>.conversion {
+            ReferenceConversionType::Copy =&gt; <span class="self">self</span>.ty.display(db).to_string(),
+            ReferenceConversionType::AsRefStr =&gt; <span class="string">&quot;&amp;str&quot;</span>.to_string(),
+            ReferenceConversionType::AsRefSlice =&gt; {
+                <span class="kw">let </span>type_argument_name =
+                    <span class="self">self</span>.ty.type_arguments().next().unwrap().display(db).to_string();
+                <span class="macro">format!</span>(<span class="string">&quot;&amp;[{type_argument_name}]&quot;</span>)
+            }
+            ReferenceConversionType::Dereferenced =&gt; {
+                <span class="kw">let </span>type_argument_name =
+                    <span class="self">self</span>.ty.type_arguments().next().unwrap().display(db).to_string();
+                <span class="macro">format!</span>(<span class="string">&quot;&amp;{type_argument_name}&quot;</span>)
+            }
+            ReferenceConversionType::Option =&gt; {
+                <span class="kw">let </span>type_argument_name =
+                    <span class="self">self</span>.ty.type_arguments().next().unwrap().display(db).to_string();
+                <span class="macro">format!</span>(<span class="string">&quot;Option&lt;&amp;{type_argument_name}&gt;&quot;</span>)
+            }
+            ReferenceConversionType::Result =&gt; {
+                <span class="kw">let </span><span class="kw-2">mut </span>type_arguments = <span class="self">self</span>.ty.type_arguments();
+                <span class="kw">let </span>first_type_argument_name =
+                    type_arguments.next().unwrap().display(db).to_string();
+                <span class="kw">let </span>second_type_argument_name =
+                    type_arguments.next().unwrap().display(db).to_string();
+                <span class="macro">format!</span>(<span class="string">&quot;Result&lt;&amp;{first_type_argument_name}, &amp;{second_type_argument_name}&gt;&quot;</span>)
+            }
+        }
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>getter(<span class="kw-2">&amp;</span><span class="self">self</span>, field_name: String) -&gt; String {
+        <span class="kw">match </span><span class="self">self</span>.conversion {
+            ReferenceConversionType::Copy =&gt; <span class="macro">format!</span>(<span class="string">&quot;self.{field_name}&quot;</span>),
+            ReferenceConversionType::AsRefStr
+            | ReferenceConversionType::AsRefSlice
+            | ReferenceConversionType::Dereferenced
+            | ReferenceConversionType::Option
+            | ReferenceConversionType::Result =&gt; <span class="macro">format!</span>(<span class="string">&quot;self.{field_name}.as_ref()&quot;</span>),
+        }
+    }
+}
+
+<span class="comment">// FIXME: It should return a new hir::Type, but currently constructing new types is too cumbersome
+//        and all users of this function operate on string type names, so they can do the conversion
+//        itself themselves.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>convert_reference_type(
+    ty: hir::Type,
+    db: <span class="kw-2">&amp;</span>RootDatabase,
+    famous_defs: <span class="kw-2">&amp;</span>FamousDefs&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversion&gt; {
+    handle_copy(<span class="kw-2">&amp;</span>ty, db)
+        .or_else(|| handle_as_ref_str(<span class="kw-2">&amp;</span>ty, db, famous_defs))
+        .or_else(|| handle_as_ref_slice(<span class="kw-2">&amp;</span>ty, db, famous_defs))
+        .or_else(|| handle_dereferenced(<span class="kw-2">&amp;</span>ty, db, famous_defs))
+        .or_else(|| handle_option_as_ref(<span class="kw-2">&amp;</span>ty, db, famous_defs))
+        .or_else(|| handle_result_as_ref(<span class="kw-2">&amp;</span>ty, db, famous_defs))
+        .map(|conversion| ReferenceConversion { ty, conversion })
+}
+
+<span class="kw">fn </span>handle_copy(ty: <span class="kw-2">&amp;</span>hir::Type, db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversionType&gt; {
+    ty.is_copy(db).then_some(ReferenceConversionType::Copy)
+}
+
+<span class="kw">fn </span>handle_as_ref_str(
+    ty: <span class="kw-2">&amp;</span>hir::Type,
+    db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase,
+    famous_defs: <span class="kw-2">&amp;</span>FamousDefs&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversionType&gt; {
+    <span class="kw">let </span>str_type = hir::BuiltinType::str().ty(db);
+
+    ty.impls_trait(db, famous_defs.core_convert_AsRef()<span class="question-mark">?</span>, <span class="kw-2">&amp;</span>[str_type])
+        .then_some(ReferenceConversionType::AsRefStr)
+}
+
+<span class="kw">fn </span>handle_as_ref_slice(
+    ty: <span class="kw-2">&amp;</span>hir::Type,
+    db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase,
+    famous_defs: <span class="kw-2">&amp;</span>FamousDefs&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversionType&gt; {
+    <span class="kw">let </span>type_argument = ty.type_arguments().next()<span class="question-mark">?</span>;
+    <span class="kw">let </span>slice_type = hir::Type::new_slice(type_argument);
+
+    ty.impls_trait(db, famous_defs.core_convert_AsRef()<span class="question-mark">?</span>, <span class="kw-2">&amp;</span>[slice_type])
+        .then_some(ReferenceConversionType::AsRefSlice)
+}
+
+<span class="kw">fn </span>handle_dereferenced(
+    ty: <span class="kw-2">&amp;</span>hir::Type,
+    db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase,
+    famous_defs: <span class="kw-2">&amp;</span>FamousDefs&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversionType&gt; {
+    <span class="kw">let </span>type_argument = ty.type_arguments().next()<span class="question-mark">?</span>;
+
+    ty.impls_trait(db, famous_defs.core_convert_AsRef()<span class="question-mark">?</span>, <span class="kw-2">&amp;</span>[type_argument])
+        .then_some(ReferenceConversionType::Dereferenced)
+}
+
+<span class="kw">fn </span>handle_option_as_ref(
+    ty: <span class="kw-2">&amp;</span>hir::Type,
+    db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase,
+    famous_defs: <span class="kw-2">&amp;</span>FamousDefs&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversionType&gt; {
+    <span class="kw">if </span>ty.as_adt() == famous_defs.core_option_Option()<span class="question-mark">?</span>.ty(db).as_adt() {
+        <span class="prelude-val">Some</span>(ReferenceConversionType::Option)
+    } <span class="kw">else </span>{
+        <span class="prelude-val">None
+    </span>}
+}
+
+<span class="kw">fn </span>handle_result_as_ref(
+    ty: <span class="kw-2">&amp;</span>hir::Type,
+    db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase,
+    famous_defs: <span class="kw-2">&amp;</span>FamousDefs&lt;<span class="lifetime">&#39;_</span>, <span class="lifetime">&#39;_</span>&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;ReferenceConversionType&gt; {
+    <span class="kw">if </span>ty.as_adt() == famous_defs.core_result_Result()<span class="question-mark">?</span>.ty(db).as_adt() {
+        <span class="prelude-val">Some</span>(ReferenceConversionType::Result)
+    } <span class="kw">else </span>{
+        <span class="prelude-val">None
+    </span>}
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_methods(items: <span class="kw-2">&amp;</span>ast::AssocItemList) -&gt; Vec&lt;ast::Fn&gt; {
+    items
+        .assoc_items()
+        .flat_map(|i| <span class="kw">match </span>i {
+            ast::AssocItem::Fn(f) =&gt; <span class="prelude-val">Some</span>(f),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        })
+        .filter(|f| f.name().is_some())
+        .collect()
+}
+
+<span class="doccomment">/// Trim(remove leading and trailing whitespace) `initial_range` in `source_file`, return the trimmed range.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>trimmed_text_range(source_file: <span class="kw-2">&amp;</span>SourceFile, initial_range: TextRange) -&gt; TextRange {
+    <span class="kw">let </span><span class="kw-2">mut </span>trimmed_range = initial_range;
+    <span class="kw">while </span>source_file
+        .syntax()
+        .token_at_offset(trimmed_range.start())
+        .find_map(Whitespace::cast)
+        .is_some()
+        &amp;&amp; trimmed_range.start() &lt; trimmed_range.end()
+    {
+        <span class="kw">let </span>start = trimmed_range.start() + TextSize::from(<span class="number">1</span>);
+        trimmed_range = TextRange::new(start, trimmed_range.end());
+    }
+    <span class="kw">while </span>source_file
+        .syntax()
+        .token_at_offset(trimmed_range.end())
+        .find_map(Whitespace::cast)
+        .is_some()
+        &amp;&amp; trimmed_range.start() &lt; trimmed_range.end()
+    {
+        <span class="kw">let </span>end = trimmed_range.end() - TextSize::from(<span class="number">1</span>);
+        trimmed_range = TextRange::new(trimmed_range.start(), end);
+    }
+    trimmed_range
+}
+
+<span class="doccomment">/// Convert a list of function params to a list of arguments that can be passed
+/// into a function call.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>convert_param_list_to_arg_list(list: ast::ParamList) -&gt; ast::ArgList {
+    <span class="kw">let </span><span class="kw-2">mut </span>args = <span class="macro">vec!</span>[];
+    <span class="kw">for </span>param <span class="kw">in </span>list.params() {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(ast::Pat::IdentPat(pat)) = param.pat() {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(name) = pat.name() {
+                <span class="kw">let </span>name = name.to_string();
+                <span class="kw">let </span>expr = make::expr_path(make::ext::ident_path(<span class="kw-2">&amp;</span>name));
+                args.push(expr);
+            }
+        }
+    }
+    make::arg_list(args)
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="ide_assists" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>

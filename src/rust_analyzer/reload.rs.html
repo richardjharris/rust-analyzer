@@ -1,0 +1,1462 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/rust-analyzer/src/reload.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>reload.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../rust_analyzer/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
+<span id="618">618</span>
+<span id="619">619</span>
+<span id="620">620</span>
+<span id="621">621</span>
+<span id="622">622</span>
+<span id="623">623</span>
+<span id="624">624</span>
+<span id="625">625</span>
+<span id="626">626</span>
+<span id="627">627</span>
+<span id="628">628</span>
+<span id="629">629</span>
+<span id="630">630</span>
+<span id="631">631</span>
+<span id="632">632</span>
+<span id="633">633</span>
+<span id="634">634</span>
+<span id="635">635</span>
+<span id="636">636</span>
+<span id="637">637</span>
+<span id="638">638</span>
+<span id="639">639</span>
+<span id="640">640</span>
+<span id="641">641</span>
+<span id="642">642</span>
+<span id="643">643</span>
+<span id="644">644</span>
+<span id="645">645</span>
+<span id="646">646</span>
+<span id="647">647</span>
+<span id="648">648</span>
+<span id="649">649</span>
+<span id="650">650</span>
+<span id="651">651</span>
+<span id="652">652</span>
+<span id="653">653</span>
+<span id="654">654</span>
+<span id="655">655</span>
+<span id="656">656</span>
+<span id="657">657</span>
+<span id="658">658</span>
+<span id="659">659</span>
+<span id="660">660</span>
+<span id="661">661</span>
+<span id="662">662</span>
+<span id="663">663</span>
+<span id="664">664</span>
+<span id="665">665</span>
+<span id="666">666</span>
+<span id="667">667</span>
+<span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
+<span id="674">674</span>
+<span id="675">675</span>
+<span id="676">676</span>
+<span id="677">677</span>
+<span id="678">678</span>
+<span id="679">679</span>
+<span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Project loading &amp; configuration updates.
+//!
+//! This is quite tricky. The main problem is time and changes -- there&#39;s no
+//! fixed &quot;project&quot; rust-analyzer is working with, &quot;current project&quot; is itself
+//! mutable state. For example, when the user edits `Cargo.toml` by adding a new
+//! dependency, project model changes. What&#39;s more, switching project model is
+//! not instantaneous -- it takes time to run `cargo metadata` and (for proc
+//! macros) `cargo check`.
+//!
+//! The main guiding principle here is, as elsewhere in rust-analyzer,
+//! robustness. We try not to assume that the project model exists or is
+//! correct. Instead, we try to provide a best-effort service. Even if the
+//! project is currently loading and we don&#39;t have a full project model, we
+//! still want to respond to various  requests.
+</span><span class="kw">use </span>std::{mem, sync::Arc};
+
+<span class="kw">use </span>flycheck::{FlycheckConfig, FlycheckHandle};
+<span class="kw">use </span>hir::db::DefDatabase;
+<span class="kw">use </span>ide::Change;
+<span class="kw">use </span>ide_db::base_db::{
+    CrateGraph, Env, ProcMacro, ProcMacroExpander, ProcMacroExpansionError, ProcMacroKind,
+    ProcMacroLoadResult, SourceRoot, VfsPath,
+};
+<span class="kw">use </span>proc_macro_api::{MacroDylib, ProcMacroServer};
+<span class="kw">use </span>project_model::{ProjectWorkspace, WorkspaceBuildScripts};
+<span class="kw">use </span>syntax::SmolStr;
+<span class="kw">use </span>vfs::{file_set::FileSetConfig, AbsPath, AbsPathBuf, ChangeKind};
+
+<span class="kw">use crate</span>::{
+    config::{Config, FilesWatcher, LinkedProject},
+    global_state::GlobalState,
+    lsp_ext,
+    main_loop::Task,
+    op_queue::Cause,
+};
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>ProjectWorkspaceProgress {
+    Begin,
+    Report(String),
+    End(Vec&lt;anyhow::Result&lt;ProjectWorkspace&gt;&gt;),
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>BuildDataProgress {
+    Begin,
+    Report(String),
+    End((Arc&lt;Vec&lt;ProjectWorkspace&gt;&gt;, Vec&lt;anyhow::Result&lt;WorkspaceBuildScripts&gt;&gt;)),
+}
+
+<span class="kw">impl </span>GlobalState {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>is_quiescent(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        !(<span class="self">self</span>.fetch_workspaces_queue.op_in_progress()
+            || <span class="self">self</span>.fetch_build_data_queue.op_in_progress()
+            || <span class="self">self</span>.vfs_progress_config_version &lt; <span class="self">self</span>.vfs_config_version
+            || <span class="self">self</span>.vfs_progress_n_done &lt; <span class="self">self</span>.vfs_progress_n_total)
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>update_configuration(<span class="kw-2">&amp;mut </span><span class="self">self</span>, config: Config) {
+        <span class="kw">let </span>_p = profile::span(<span class="string">&quot;GlobalState::update_configuration&quot;</span>);
+        <span class="kw">let </span>old_config = mem::replace(<span class="kw-2">&amp;mut </span><span class="self">self</span>.config, Arc::new(config));
+        <span class="kw">if </span><span class="self">self</span>.config.lru_capacity() != old_config.lru_capacity() {
+            <span class="self">self</span>.analysis_host.update_lru_capacity(<span class="self">self</span>.config.lru_capacity());
+        }
+        <span class="kw">if </span><span class="self">self</span>.config.linked_projects() != old_config.linked_projects() {
+            <span class="self">self</span>.fetch_workspaces_queue.request_op(<span class="string">&quot;linked projects changed&quot;</span>.to_string())
+        } <span class="kw">else if </span><span class="self">self</span>.config.flycheck() != old_config.flycheck() {
+            <span class="self">self</span>.reload_flycheck();
+        }
+
+        <span class="kw">if </span><span class="self">self</span>.analysis_host.raw_database().enable_proc_attr_macros()
+            != <span class="self">self</span>.config.expand_proc_attr_macros()
+        {
+            <span class="self">self</span>.analysis_host
+                .raw_database_mut()
+                .set_enable_proc_attr_macros(<span class="self">self</span>.config.expand_proc_attr_macros());
+        }
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>current_status(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; lsp_ext::ServerStatusParams {
+        <span class="kw">let </span><span class="kw-2">mut </span>status = lsp_ext::ServerStatusParams {
+            health: lsp_ext::Health::Ok,
+            quiescent: <span class="self">self</span>.is_quiescent(),
+            message: <span class="prelude-val">None</span>,
+        };
+
+        <span class="kw">if </span><span class="self">self</span>.proc_macro_changed {
+            status.health = lsp_ext::Health::Warning;
+            status.message =
+                <span class="prelude-val">Some</span>(<span class="string">&quot;Reload required due to source changes of a procedural macro.&quot;</span>.into())
+        }
+        <span class="kw">if let </span><span class="prelude-val">Err</span>(<span class="kw">_</span>) = <span class="self">self</span>.fetch_build_data_error() {
+            status.health = lsp_ext::Health::Warning;
+            status.message =
+                <span class="prelude-val">Some</span>(<span class="string">&quot;Failed to run build scripts of some packages, check the logs.&quot;</span>.to_string());
+        }
+        <span class="kw">if </span>!<span class="self">self</span>.config.cargo_autoreload()
+            &amp;&amp; <span class="self">self</span>.is_quiescent()
+            &amp;&amp; <span class="self">self</span>.fetch_workspaces_queue.op_requested()
+        {
+            status.health = lsp_ext::Health::Warning;
+            status.message = <span class="prelude-val">Some</span>(<span class="string">&quot;Workspace reload required&quot;</span>.to_string())
+        }
+
+        <span class="kw">if let </span><span class="prelude-val">Err</span>(error) = <span class="self">self</span>.fetch_workspace_error() {
+            status.health = lsp_ext::Health::Error;
+            status.message = <span class="prelude-val">Some</span>(error)
+        }
+
+        <span class="kw">if </span><span class="self">self</span>.config.linked_projects().is_empty()
+            &amp;&amp; <span class="self">self</span>.config.detached_files().is_empty()
+            &amp;&amp; <span class="self">self</span>.config.notifications().cargo_toml_not_found
+        {
+            status.health = lsp_ext::Health::Warning;
+            status.message = <span class="prelude-val">Some</span>(<span class="string">&quot;Workspace reload required&quot;</span>.to_string())
+        }
+        status
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>fetch_workspaces(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cause: Cause) {
+        <span class="macro">tracing::info!</span>(%cause, <span class="string">&quot;will fetch workspaces&quot;</span>);
+
+        <span class="self">self</span>.task_pool.handle.spawn_with_sender({
+            <span class="kw">let </span>linked_projects = <span class="self">self</span>.config.linked_projects();
+            <span class="kw">let </span>detached_files = <span class="self">self</span>.config.detached_files().to_vec();
+            <span class="kw">let </span>cargo_config = <span class="self">self</span>.config.cargo();
+
+            <span class="kw">move </span>|sender| {
+                <span class="kw">let </span>progress = {
+                    <span class="kw">let </span>sender = sender.clone();
+                    <span class="kw">move </span>|msg| {
+                        sender
+                            .send(Task::FetchWorkspace(ProjectWorkspaceProgress::Report(msg)))
+                            .unwrap()
+                    }
+                };
+
+                sender.send(Task::FetchWorkspace(ProjectWorkspaceProgress::Begin)).unwrap();
+
+                <span class="kw">let </span><span class="kw-2">mut </span>workspaces = linked_projects
+                    .iter()
+                    .map(|project| <span class="kw">match </span>project {
+                        LinkedProject::ProjectManifest(manifest) =&gt; {
+                            project_model::ProjectWorkspace::load(
+                                manifest.clone(),
+                                <span class="kw-2">&amp;</span>cargo_config,
+                                <span class="kw-2">&amp;</span>progress,
+                            )
+                        }
+                        LinkedProject::InlineJsonProject(it) =&gt; {
+                            project_model::ProjectWorkspace::load_inline(
+                                it.clone(),
+                                cargo_config.target.as_deref(),
+                                <span class="kw-2">&amp;</span>cargo_config.extra_env,
+                            )
+                        }
+                    })
+                    .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+
+                <span class="kw">if </span>!detached_files.is_empty() {
+                    workspaces.push(project_model::ProjectWorkspace::load_detached_files(
+                        detached_files,
+                        <span class="kw-2">&amp;</span>cargo_config,
+                    ));
+                }
+
+                <span class="macro">tracing::info!</span>(<span class="string">&quot;did fetch workspaces {:?}&quot;</span>, workspaces);
+                sender
+                    .send(Task::FetchWorkspace(ProjectWorkspaceProgress::End(workspaces)))
+                    .unwrap();
+            }
+        });
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>fetch_build_data(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cause: Cause) {
+        <span class="macro">tracing::info!</span>(%cause, <span class="string">&quot;will fetch build data&quot;</span>);
+        <span class="kw">let </span>workspaces = Arc::clone(<span class="kw-2">&amp;</span><span class="self">self</span>.workspaces);
+        <span class="kw">let </span>config = <span class="self">self</span>.config.cargo();
+        <span class="self">self</span>.task_pool.handle.spawn_with_sender(<span class="kw">move </span>|sender| {
+            sender.send(Task::FetchBuildData(BuildDataProgress::Begin)).unwrap();
+
+            <span class="kw">let </span>progress = {
+                <span class="kw">let </span>sender = sender.clone();
+                <span class="kw">move </span>|msg| {
+                    sender.send(Task::FetchBuildData(BuildDataProgress::Report(msg))).unwrap()
+                }
+            };
+            <span class="kw">let </span>res = ProjectWorkspace::run_all_build_scripts(<span class="kw-2">&amp;</span>workspaces, <span class="kw-2">&amp;</span>config, <span class="kw-2">&amp;</span>progress);
+
+            sender.send(Task::FetchBuildData(BuildDataProgress::End((workspaces, res)))).unwrap();
+        });
+    }
+
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>switch_workspaces(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cause: Cause) {
+        <span class="kw">let </span>_p = profile::span(<span class="string">&quot;GlobalState::switch_workspaces&quot;</span>);
+        <span class="macro">tracing::info!</span>(%cause, <span class="string">&quot;will switch workspaces&quot;</span>);
+
+        <span class="kw">if let </span><span class="prelude-val">Err</span>(error_message) = <span class="self">self</span>.fetch_workspace_error() {
+            <span class="self">self</span>.show_and_log_error(error_message, <span class="prelude-val">None</span>);
+            <span class="kw">if </span>!<span class="self">self</span>.workspaces.is_empty() {
+                <span class="comment">// It only makes sense to switch to a partially broken workspace
+                // if we don&#39;t have any workspace at all yet.
+                </span><span class="kw">return</span>;
+            }
+        }
+
+        <span class="kw">if let </span><span class="prelude-val">Err</span>(error) = <span class="self">self</span>.fetch_build_data_error() {
+            <span class="self">self</span>.show_and_log_error(<span class="string">&quot;failed to run build scripts&quot;</span>.to_string(), <span class="prelude-val">Some</span>(error));
+        }
+
+        <span class="kw">let </span><span class="prelude-val">Some</span>(workspaces) = <span class="self">self</span>.fetch_workspaces_queue.last_op_result() <span class="kw">else </span>{ <span class="kw">return</span>; };
+        <span class="kw">let </span>workspaces =
+            workspaces.iter().filter_map(|res| res.as_ref().ok().cloned()).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+
+        <span class="kw">fn </span>eq_ignore_build_data&lt;<span class="lifetime">&#39;a</span>&gt;(
+            left: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>ProjectWorkspace,
+            right: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>ProjectWorkspace,
+        ) -&gt; bool {
+            <span class="kw">let </span>key = |p: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>ProjectWorkspace| <span class="kw">match </span>p {
+                ProjectWorkspace::Cargo {
+                    cargo,
+                    sysroot,
+                    rustc,
+                    rustc_cfg,
+                    cfg_overrides,
+
+                    build_scripts: <span class="kw">_</span>,
+                    toolchain: <span class="kw">_</span>,
+                    target_layout: <span class="kw">_</span>,
+                } =&gt; <span class="prelude-val">Some</span>((cargo, sysroot, rustc, rustc_cfg, cfg_overrides)),
+                <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+            };
+            <span class="kw">match </span>(key(left), key(right)) {
+                (<span class="prelude-val">Some</span>(lk), <span class="prelude-val">Some</span>(rk)) =&gt; lk == rk,
+                <span class="kw">_ </span>=&gt; left == right,
+            }
+        }
+
+        <span class="kw">let </span>same_workspaces = workspaces.len() == <span class="self">self</span>.workspaces.len()
+            &amp;&amp; workspaces
+                .iter()
+                .zip(<span class="self">self</span>.workspaces.iter())
+                .all(|(l, r)| eq_ignore_build_data(l, r));
+
+        <span class="kw">if </span>same_workspaces {
+            <span class="kw">let </span>(workspaces, build_scripts) = <span class="self">self</span>.fetch_build_data_queue.last_op_result();
+            <span class="kw">if </span>Arc::ptr_eq(workspaces, <span class="kw-2">&amp;</span><span class="self">self</span>.workspaces) {
+                <span class="macro">tracing::debug!</span>(<span class="string">&quot;set build scripts to workspaces&quot;</span>);
+
+                <span class="kw">let </span>workspaces = workspaces
+                    .iter()
+                    .cloned()
+                    .zip(build_scripts)
+                    .map(|(<span class="kw-2">mut </span>ws, bs)| {
+                        ws.set_build_scripts(bs.as_ref().ok().cloned().unwrap_or_default());
+                        ws
+                    })
+                    .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+
+                <span class="comment">// Workspaces are the same, but we&#39;ve updated build data.
+                </span><span class="self">self</span>.workspaces = Arc::new(workspaces);
+            } <span class="kw">else </span>{
+                <span class="macro">tracing::info!</span>(<span class="string">&quot;build scripts do not match the version of the active workspace&quot;</span>);
+                <span class="comment">// Current build scripts do not match the version of the active
+                // workspace, so there&#39;s nothing for us to update.
+                </span><span class="kw">return</span>;
+            }
+        } <span class="kw">else </span>{
+            <span class="macro">tracing::debug!</span>(<span class="string">&quot;abandon build scripts for workspaces&quot;</span>);
+
+            <span class="comment">// Here, we completely changed the workspace (Cargo.toml edit), so
+            // we don&#39;t care about build-script results, they are stale.
+            </span><span class="self">self</span>.workspaces = Arc::new(workspaces)
+        }
+
+        <span class="kw">if let </span>FilesWatcher::Client = <span class="self">self</span>.config.files().watcher {
+            <span class="kw">let </span>registration_options = lsp_types::DidChangeWatchedFilesRegistrationOptions {
+                watchers: <span class="self">self
+                    </span>.workspaces
+                    .iter()
+                    .flat_map(|ws| ws.to_roots())
+                    .filter(|it| it.is_local)
+                    .flat_map(|root| {
+                        root.include.into_iter().flat_map(|it| {
+                            [
+                                <span class="macro">format!</span>(<span class="string">&quot;{}/**/*.rs&quot;</span>, it.display()),
+                                <span class="macro">format!</span>(<span class="string">&quot;{}/**/Cargo.toml&quot;</span>, it.display()),
+                                <span class="macro">format!</span>(<span class="string">&quot;{}/**/Cargo.lock&quot;</span>, it.display()),
+                            ]
+                        })
+                    })
+                    .map(|glob_pattern| lsp_types::FileSystemWatcher { glob_pattern, kind: <span class="prelude-val">None </span>})
+                    .collect(),
+            };
+            <span class="kw">let </span>registration = lsp_types::Registration {
+                id: <span class="string">&quot;workspace/didChangeWatchedFiles&quot;</span>.to_string(),
+                method: <span class="string">&quot;workspace/didChangeWatchedFiles&quot;</span>.to_string(),
+                register_options: <span class="prelude-val">Some</span>(serde_json::to_value(registration_options).unwrap()),
+            };
+            <span class="self">self</span>.send_request::&lt;lsp_types::request::RegisterCapability&gt;(
+                lsp_types::RegistrationParams { registrations: <span class="macro">vec!</span>[registration] },
+                |<span class="kw">_</span>, <span class="kw">_</span>| (),
+            );
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>change = Change::new();
+
+        <span class="kw">let </span>files_config = <span class="self">self</span>.config.files();
+        <span class="kw">let </span>project_folders = ProjectFolders::new(<span class="kw-2">&amp;</span><span class="self">self</span>.workspaces, <span class="kw-2">&amp;</span>files_config.exclude);
+
+        <span class="kw">if </span><span class="self">self</span>.proc_macro_clients.is_empty() {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>((path, path_manually_set)) = <span class="self">self</span>.config.proc_macro_srv() {
+                <span class="macro">tracing::info!</span>(<span class="string">&quot;Spawning proc-macro servers&quot;</span>);
+                <span class="self">self</span>.proc_macro_clients = <span class="self">self
+                    </span>.workspaces
+                    .iter()
+                    .map(|ws| {
+                        <span class="kw">let </span>(path, args): (<span class="kw">_</span>, <span class="kw-2">&amp;</span>[<span class="kw">_</span>]) = <span class="kw">if </span>path_manually_set {
+                            <span class="macro">tracing::debug!</span>(
+                                <span class="string">&quot;Pro-macro server path explicitly set: {}&quot;</span>,
+                                path.display()
+                            );
+                            (path.clone(), <span class="kw-2">&amp;</span>[])
+                        } <span class="kw">else </span>{
+                            <span class="kw">match </span>ws.find_sysroot_proc_macro_srv() {
+                                <span class="prelude-val">Some</span>(server_path) =&gt; (server_path, <span class="kw-2">&amp;</span>[]),
+                                <span class="prelude-val">None </span>=&gt; (path.clone(), <span class="kw-2">&amp;</span>[<span class="string">&quot;proc-macro&quot;</span>]),
+                            }
+                        };
+
+                        <span class="macro">tracing::info!</span>(<span class="question-mark">?</span>args, <span class="string">&quot;Using proc-macro server at {}&quot;</span>, path.display(),);
+                        ProcMacroServer::spawn(path.clone(), args).map_err(|err| {
+                            <span class="kw">let </span>error = <span class="macro">format!</span>(
+                                <span class="string">&quot;Failed to run proc-macro server from path {}, error: {:?}&quot;</span>,
+                                path.display(),
+                                err
+                            );
+                            <span class="macro">tracing::error!</span>(error);
+                            error
+                        })
+                    })
+                    .collect()
+            };
+        }
+
+        <span class="kw">let </span>watch = <span class="kw">match </span>files_config.watcher {
+            FilesWatcher::Client =&gt; <span class="macro">vec!</span>[],
+            FilesWatcher::Server =&gt; project_folders.watch,
+        };
+        <span class="self">self</span>.vfs_config_version += <span class="number">1</span>;
+        <span class="self">self</span>.loader.handle.set_config(vfs::loader::Config {
+            load: project_folders.load,
+            watch,
+            version: <span class="self">self</span>.vfs_config_version,
+        });
+
+        <span class="comment">// Create crate graph from all the workspaces
+        </span><span class="kw">let </span>crate_graph = {
+            <span class="kw">let </span>dummy_replacements = <span class="self">self</span>.config.dummy_replacements();
+
+            <span class="kw">let </span>vfs = <span class="kw-2">&amp;mut </span><span class="self">self</span>.vfs.write().<span class="number">0</span>;
+            <span class="kw">let </span>loader = <span class="kw-2">&amp;mut </span><span class="self">self</span>.loader;
+            <span class="kw">let </span>mem_docs = <span class="kw-2">&amp;</span><span class="self">self</span>.mem_docs;
+            <span class="kw">let </span><span class="kw-2">mut </span>load = <span class="kw">move </span>|path: <span class="kw-2">&amp;</span>AbsPath| {
+                <span class="kw">let </span>_p = profile::span(<span class="string">&quot;GlobalState::load&quot;</span>);
+                <span class="kw">let </span>vfs_path = vfs::VfsPath::from(path.to_path_buf());
+                <span class="kw">if </span>!mem_docs.contains(<span class="kw-2">&amp;</span>vfs_path) {
+                    <span class="kw">let </span>contents = loader.handle.load_sync(path);
+                    vfs.set_file_contents(vfs_path.clone(), contents);
+                }
+                <span class="kw">let </span>res = vfs.file_id(<span class="kw-2">&amp;</span>vfs_path);
+                <span class="kw">if </span>res.is_none() {
+                    <span class="macro">tracing::warn!</span>(<span class="string">&quot;failed to load {}&quot;</span>, path.display())
+                }
+                res
+            };
+
+            <span class="kw">let </span><span class="kw-2">mut </span>crate_graph = CrateGraph::default();
+            <span class="kw">for </span>(idx, ws) <span class="kw">in </span><span class="self">self</span>.workspaces.iter().enumerate() {
+                <span class="kw">let </span>proc_macro_client = <span class="kw">match </span><span class="self">self</span>.proc_macro_clients.get(idx) {
+                    <span class="prelude-val">Some</span>(res) =&gt; res.as_ref().map_err(|e| <span class="kw-2">&amp;**</span>e),
+                    <span class="prelude-val">None </span>=&gt; <span class="prelude-val">Err</span>(<span class="string">&quot;Proc macros are disabled&quot;</span>),
+                };
+                <span class="kw">let </span><span class="kw-2">mut </span>load_proc_macro = <span class="kw">move </span>|crate_name: <span class="kw-2">&amp;</span>str, path: <span class="kw-2">&amp;</span>AbsPath| {
+                    load_proc_macro(
+                        proc_macro_client,
+                        path,
+                        dummy_replacements.get(crate_name).map(|v| <span class="kw-2">&amp;**</span>v).unwrap_or_default(),
+                    )
+                };
+                crate_graph.extend(ws.to_crate_graph(
+                    <span class="kw-2">&amp;mut </span>load_proc_macro,
+                    <span class="kw-2">&amp;mut </span>load,
+                    <span class="kw-2">&amp;</span><span class="self">self</span>.config.cargo().extra_env,
+                ));
+            }
+            crate_graph
+        };
+        change.set_crate_graph(crate_graph);
+
+        <span class="self">self</span>.source_root_config = project_folders.source_root_config;
+
+        <span class="self">self</span>.analysis_host.apply_change(change);
+        <span class="self">self</span>.process_changes();
+        <span class="self">self</span>.reload_flycheck();
+        <span class="macro">tracing::info!</span>(<span class="string">&quot;did switch workspaces&quot;</span>);
+    }
+
+    <span class="kw">fn </span>fetch_workspace_error(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;(), String&gt; {
+        <span class="kw">let </span><span class="kw-2">mut </span>buf = String::new();
+
+        <span class="kw">let </span><span class="prelude-val">Some</span>(last_op_result) = <span class="self">self</span>.fetch_workspaces_queue.last_op_result() <span class="kw">else </span>{ <span class="kw">return </span><span class="prelude-val">Ok</span>(()) };
+        <span class="kw">if </span>last_op_result.is_empty() {
+            <span class="macro">stdx::format_to!</span>(buf, <span class="string">&quot;rust-analyzer failed to discover workspace&quot;</span>);
+        } <span class="kw">else </span>{
+            <span class="kw">for </span>ws <span class="kw">in </span>last_op_result {
+                <span class="kw">if let </span><span class="prelude-val">Err</span>(err) = ws {
+                    <span class="macro">stdx::format_to!</span>(buf, <span class="string">&quot;rust-analyzer failed to load workspace: {:#}\n&quot;</span>, err);
+                }
+            }
+        }
+
+        <span class="kw">if </span>buf.is_empty() {
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+        }
+
+        <span class="prelude-val">Err</span>(buf)
+    }
+
+    <span class="kw">fn </span>fetch_build_data_error(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;(), String&gt; {
+        <span class="kw">let </span><span class="kw-2">mut </span>buf = String::new();
+
+        <span class="kw">for </span>ws <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.fetch_build_data_queue.last_op_result().<span class="number">1 </span>{
+            <span class="kw">match </span>ws {
+                <span class="prelude-val">Ok</span>(data) =&gt; <span class="kw">match </span>data.error() {
+                    <span class="prelude-val">Some</span>(stderr) =&gt; <span class="macro">stdx::format_to!</span>(buf, <span class="string">&quot;{:#}\n&quot;</span>, stderr),
+                    <span class="kw">_ </span>=&gt; (),
+                },
+                <span class="comment">// io errors
+                </span><span class="prelude-val">Err</span>(err) =&gt; <span class="macro">stdx::format_to!</span>(buf, <span class="string">&quot;{:#}\n&quot;</span>, err),
+            }
+        }
+
+        <span class="kw">if </span>buf.is_empty() {
+            <span class="prelude-val">Ok</span>(())
+        } <span class="kw">else </span>{
+            <span class="prelude-val">Err</span>(buf)
+        }
+    }
+
+    <span class="kw">fn </span>reload_flycheck(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+        <span class="kw">let </span>_p = profile::span(<span class="string">&quot;GlobalState::reload_flycheck&quot;</span>);
+        <span class="kw">let </span>config = <span class="self">self</span>.config.flycheck();
+        <span class="kw">let </span>sender = <span class="self">self</span>.flycheck_sender.clone();
+        <span class="kw">let </span>invocation_strategy = <span class="kw">match </span>config {
+            FlycheckConfig::CargoCommand { .. } =&gt; flycheck::InvocationStrategy::PerWorkspace,
+            FlycheckConfig::CustomCommand { invocation_strategy, .. } =&gt; invocation_strategy,
+        };
+
+        <span class="self">self</span>.flycheck = <span class="kw">match </span>invocation_strategy {
+            flycheck::InvocationStrategy::Once =&gt; <span class="macro">vec!</span>[FlycheckHandle::spawn(
+                <span class="number">0</span>,
+                Box::new(<span class="kw">move </span>|msg| sender.send(msg).unwrap()),
+                config,
+                <span class="self">self</span>.config.root_path().clone(),
+            )],
+            flycheck::InvocationStrategy::PerWorkspace =&gt; {
+                <span class="self">self</span>.workspaces
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(id, w)| <span class="kw">match </span>w {
+                        ProjectWorkspace::Cargo { cargo, .. } =&gt; <span class="prelude-val">Some</span>((id, cargo.workspace_root())),
+                        ProjectWorkspace::Json { project, .. } =&gt; {
+                            <span class="comment">// Enable flychecks for json projects if a custom flycheck command was supplied
+                            // in the workspace configuration.
+                            </span><span class="kw">match </span>config {
+                                FlycheckConfig::CustomCommand { .. } =&gt; <span class="prelude-val">Some</span>((id, project.path())),
+                                <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+                            }
+                        }
+                        ProjectWorkspace::DetachedFiles { .. } =&gt; <span class="prelude-val">None</span>,
+                    })
+                    .map(|(id, root)| {
+                        <span class="kw">let </span>sender = sender.clone();
+                        FlycheckHandle::spawn(
+                            id,
+                            Box::new(<span class="kw">move </span>|msg| sender.send(msg).unwrap()),
+                            config.clone(),
+                            root.to_path_buf(),
+                        )
+                    })
+                    .collect()
+            }
+        }
+        .into();
+    }
+}
+
+<span class="attribute">#[derive(Default)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>ProjectFolders {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) load: Vec&lt;vfs::loader::Entry&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) watch: Vec&lt;usize&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) source_root_config: SourceRootConfig,
+}
+
+<span class="kw">impl </span>ProjectFolders {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(
+        workspaces: <span class="kw-2">&amp;</span>[ProjectWorkspace],
+        global_excludes: <span class="kw-2">&amp;</span>[AbsPathBuf],
+    ) -&gt; ProjectFolders {
+        <span class="kw">let </span><span class="kw-2">mut </span>res = ProjectFolders::default();
+        <span class="kw">let </span><span class="kw-2">mut </span>fsc = FileSetConfig::builder();
+        <span class="kw">let </span><span class="kw-2">mut </span>local_filesets = <span class="macro">vec!</span>[];
+
+        <span class="kw">for </span>root <span class="kw">in </span>workspaces.iter().flat_map(|ws| ws.to_roots()) {
+            <span class="kw">let </span>file_set_roots: Vec&lt;VfsPath&gt; =
+                root.include.iter().cloned().map(VfsPath::from).collect();
+
+            <span class="kw">let </span>entry = {
+                <span class="kw">let </span><span class="kw-2">mut </span>dirs = vfs::loader::Directories::default();
+                dirs.extensions.push(<span class="string">&quot;rs&quot;</span>.into());
+                dirs.include.extend(root.include);
+                dirs.exclude.extend(root.exclude);
+                <span class="kw">for </span>excl <span class="kw">in </span>global_excludes {
+                    <span class="kw">if </span>dirs
+                        .include
+                        .iter()
+                        .any(|incl| incl.starts_with(excl) || excl.starts_with(incl))
+                    {
+                        dirs.exclude.push(excl.clone());
+                    }
+                }
+
+                vfs::loader::Entry::Directories(dirs)
+            };
+
+            <span class="kw">if </span>root.is_local {
+                res.watch.push(res.load.len());
+            }
+            res.load.push(entry);
+
+            <span class="kw">if </span>root.is_local {
+                local_filesets.push(fsc.len());
+            }
+            fsc.add_file_set(file_set_roots)
+        }
+
+        <span class="kw">let </span>fsc = fsc.build();
+        res.source_root_config = SourceRootConfig { fsc, local_filesets };
+
+        res
+    }
+}
+
+<span class="attribute">#[derive(Default, Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>SourceRootConfig {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) fsc: FileSetConfig,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) local_filesets: Vec&lt;usize&gt;,
+}
+
+<span class="kw">impl </span>SourceRootConfig {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>partition(<span class="kw-2">&amp;</span><span class="self">self</span>, vfs: <span class="kw-2">&amp;</span>vfs::Vfs) -&gt; Vec&lt;SourceRoot&gt; {
+        <span class="kw">let </span>_p = profile::span(<span class="string">&quot;SourceRootConfig::partition&quot;</span>);
+        <span class="self">self</span>.fsc
+            .partition(vfs)
+            .into_iter()
+            .enumerate()
+            .map(|(idx, file_set)| {
+                <span class="kw">let </span>is_local = <span class="self">self</span>.local_filesets.contains(<span class="kw-2">&amp;</span>idx);
+                <span class="kw">if </span>is_local {
+                    SourceRoot::new_local(file_set)
+                } <span class="kw">else </span>{
+                    SourceRoot::new_library(file_set)
+                }
+            })
+            .collect()
+    }
+}
+
+<span class="doccomment">/// Load the proc-macros for the given lib path, replacing all expanders whose names are in `dummy_replace`
+/// with an identity dummy expander.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>load_proc_macro(
+    server: <span class="prelude-ty">Result</span>&lt;<span class="kw-2">&amp;</span>ProcMacroServer, <span class="kw-2">&amp;</span>str&gt;,
+    path: <span class="kw-2">&amp;</span>AbsPath,
+    dummy_replace: <span class="kw-2">&amp;</span>[Box&lt;str&gt;],
+) -&gt; ProcMacroLoadResult {
+    <span class="kw">let </span>res: <span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="kw">_</span>&gt;, String&gt; = (|| {
+        <span class="kw">let </span>dylib = MacroDylib::new(path.to_path_buf())
+            .map_err(|io| <span class="macro">format!</span>(<span class="string">&quot;Proc-macro dylib loading failed: {io}&quot;</span>))<span class="question-mark">?</span>;
+        <span class="kw">let </span>server = server.map_err(ToOwned::to_owned)<span class="question-mark">?</span>;
+        <span class="kw">let </span>vec = server.load_dylib(dylib).map_err(|e| <span class="macro">format!</span>(<span class="string">&quot;{e}&quot;</span>))<span class="question-mark">?</span>;
+        <span class="kw">if </span>vec.is_empty() {
+            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">&quot;proc macro library returned no proc macros&quot;</span>.to_string());
+        }
+        <span class="prelude-val">Ok</span>(vec
+            .into_iter()
+            .map(|expander| expander_to_proc_macro(expander, dummy_replace))
+            .collect())
+    })();
+    <span class="kw">return match </span>res {
+        <span class="prelude-val">Ok</span>(proc_macros) =&gt; {
+            <span class="macro">tracing::info!</span>(
+                <span class="string">&quot;Loaded proc-macros for {}: {:?}&quot;</span>,
+                path.display(),
+                proc_macros.iter().map(|it| it.name.clone()).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;()
+            );
+            <span class="prelude-val">Ok</span>(proc_macros)
+        }
+        <span class="prelude-val">Err</span>(e) =&gt; {
+            <span class="macro">tracing::warn!</span>(<span class="string">&quot;proc-macro loading for {} failed: {e}&quot;</span>, path.display());
+            <span class="prelude-val">Err</span>(e)
+        }
+    };
+
+    <span class="kw">fn </span>expander_to_proc_macro(
+        expander: proc_macro_api::ProcMacro,
+        dummy_replace: <span class="kw-2">&amp;</span>[Box&lt;str&gt;],
+    ) -&gt; ProcMacro {
+        <span class="kw">let </span>name = SmolStr::from(expander.name());
+        <span class="kw">let </span>kind = <span class="kw">match </span>expander.kind() {
+            proc_macro_api::ProcMacroKind::CustomDerive =&gt; ProcMacroKind::CustomDerive,
+            proc_macro_api::ProcMacroKind::FuncLike =&gt; ProcMacroKind::FuncLike,
+            proc_macro_api::ProcMacroKind::Attr =&gt; ProcMacroKind::Attr,
+        };
+        <span class="kw">let </span>expander: Arc&lt;<span class="kw">dyn </span>ProcMacroExpander&gt; =
+            <span class="kw">if </span>dummy_replace.iter().any(|replace| <span class="kw-2">&amp;**</span>replace == name) {
+                <span class="kw">match </span>kind {
+                    ProcMacroKind::Attr =&gt; Arc::new(IdentityExpander),
+                    <span class="kw">_ </span>=&gt; Arc::new(EmptyExpander),
+                }
+            } <span class="kw">else </span>{
+                Arc::new(Expander(expander))
+            };
+        ProcMacro { name, kind, expander }
+    }
+
+    <span class="attribute">#[derive(Debug)]
+    </span><span class="kw">struct </span>Expander(proc_macro_api::ProcMacro);
+
+    <span class="kw">impl </span>ProcMacroExpander <span class="kw">for </span>Expander {
+        <span class="kw">fn </span>expand(
+            <span class="kw-2">&amp;</span><span class="self">self</span>,
+            subtree: <span class="kw-2">&amp;</span>tt::Subtree,
+            attrs: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>tt::Subtree&gt;,
+            env: <span class="kw-2">&amp;</span>Env,
+        ) -&gt; <span class="prelude-ty">Result</span>&lt;tt::Subtree, ProcMacroExpansionError&gt; {
+            <span class="kw">let </span>env = env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            <span class="kw">match </span><span class="self">self</span>.<span class="number">0</span>.expand(subtree, attrs, env) {
+                <span class="prelude-val">Ok</span>(<span class="prelude-val">Ok</span>(subtree)) =&gt; <span class="prelude-val">Ok</span>(subtree),
+                <span class="prelude-val">Ok</span>(<span class="prelude-val">Err</span>(err)) =&gt; <span class="prelude-val">Err</span>(ProcMacroExpansionError::Panic(err.<span class="number">0</span>)),
+                <span class="prelude-val">Err</span>(err) =&gt; <span class="prelude-val">Err</span>(ProcMacroExpansionError::System(err.to_string())),
+            }
+        }
+    }
+
+    <span class="doccomment">/// Dummy identity expander, used for attribute proc-macros that are deliberately ignored by the user.
+    </span><span class="attribute">#[derive(Debug)]
+    </span><span class="kw">struct </span>IdentityExpander;
+
+    <span class="kw">impl </span>ProcMacroExpander <span class="kw">for </span>IdentityExpander {
+        <span class="kw">fn </span>expand(
+            <span class="kw-2">&amp;</span><span class="self">self</span>,
+            subtree: <span class="kw-2">&amp;</span>tt::Subtree,
+            <span class="kw">_</span>: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>tt::Subtree&gt;,
+            <span class="kw">_</span>: <span class="kw-2">&amp;</span>Env,
+        ) -&gt; <span class="prelude-ty">Result</span>&lt;tt::Subtree, ProcMacroExpansionError&gt; {
+            <span class="prelude-val">Ok</span>(subtree.clone())
+        }
+    }
+
+    <span class="doccomment">/// Empty expander, used for proc-macros that are deliberately ignored by the user.
+    </span><span class="attribute">#[derive(Debug)]
+    </span><span class="kw">struct </span>EmptyExpander;
+
+    <span class="kw">impl </span>ProcMacroExpander <span class="kw">for </span>EmptyExpander {
+        <span class="kw">fn </span>expand(
+            <span class="kw-2">&amp;</span><span class="self">self</span>,
+            <span class="kw">_</span>: <span class="kw-2">&amp;</span>tt::Subtree,
+            <span class="kw">_</span>: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>tt::Subtree&gt;,
+            <span class="kw">_</span>: <span class="kw-2">&amp;</span>Env,
+        ) -&gt; <span class="prelude-ty">Result</span>&lt;tt::Subtree, ProcMacroExpansionError&gt; {
+            <span class="prelude-val">Ok</span>(tt::Subtree::default())
+        }
+    }
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>should_refresh_for_change(path: <span class="kw-2">&amp;</span>AbsPath, change_kind: ChangeKind) -&gt; bool {
+    <span class="kw">const </span>IMPLICIT_TARGET_FILES: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str] = <span class="kw-2">&amp;</span>[<span class="string">&quot;build.rs&quot;</span>, <span class="string">&quot;src/main.rs&quot;</span>, <span class="string">&quot;src/lib.rs&quot;</span>];
+    <span class="kw">const </span>IMPLICIT_TARGET_DIRS: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str] = <span class="kw-2">&amp;</span>[<span class="string">&quot;src/bin&quot;</span>, <span class="string">&quot;examples&quot;</span>, <span class="string">&quot;tests&quot;</span>, <span class="string">&quot;benches&quot;</span>];
+
+    <span class="kw">let </span>file_name = <span class="kw">match </span>path.file_name().unwrap_or_default().to_str() {
+        <span class="prelude-val">Some</span>(it) =&gt; it,
+        <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+    };
+
+    <span class="kw">if let </span><span class="string">&quot;Cargo.toml&quot; </span>| <span class="string">&quot;Cargo.lock&quot; </span>= file_name {
+        <span class="kw">return </span><span class="bool-val">true</span>;
+    }
+    <span class="kw">if </span>change_kind == ChangeKind::Modify {
+        <span class="kw">return </span><span class="bool-val">false</span>;
+    }
+
+    <span class="comment">// .cargo/config{.toml}
+    </span><span class="kw">if </span>path.extension().unwrap_or_default() != <span class="string">&quot;rs&quot; </span>{
+        <span class="kw">let </span>is_cargo_config = <span class="macro">matches!</span>(file_name, <span class="string">&quot;config.toml&quot; </span>| <span class="string">&quot;config&quot;</span>)
+            &amp;&amp; path.parent().map(|parent| parent.as_ref().ends_with(<span class="string">&quot;.cargo&quot;</span>)).unwrap_or(<span class="bool-val">false</span>);
+        <span class="kw">return </span>is_cargo_config;
+    }
+
+    <span class="kw">if </span>IMPLICIT_TARGET_FILES.iter().any(|it| path.as_ref().ends_with(it)) {
+        <span class="kw">return </span><span class="bool-val">true</span>;
+    }
+    <span class="kw">let </span>parent = <span class="kw">match </span>path.parent() {
+        <span class="prelude-val">Some</span>(it) =&gt; it,
+        <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+    };
+    <span class="kw">if </span>IMPLICIT_TARGET_DIRS.iter().any(|it| parent.as_ref().ends_with(it)) {
+        <span class="kw">return </span><span class="bool-val">true</span>;
+    }
+    <span class="kw">if </span>file_name == <span class="string">&quot;main.rs&quot; </span>{
+        <span class="kw">let </span>grand_parent = <span class="kw">match </span>parent.parent() {
+            <span class="prelude-val">Some</span>(it) =&gt; it,
+            <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+        };
+        <span class="kw">if </span>IMPLICIT_TARGET_DIRS.iter().any(|it| grand_parent.as_ref().ends_with(it)) {
+            <span class="kw">return </span><span class="bool-val">true</span>;
+        }
+    }
+    <span class="bool-val">false
+</span>}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="rust_analyzer" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>

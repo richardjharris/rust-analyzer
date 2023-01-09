@@ -1,0 +1,304 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/proc-macro-api/src/version.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>version.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../proc_macro_api/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Reading proc-macro rustc version information from binary data
+
+</span><span class="kw">use </span>std::{
+    fs::File,
+    io::{<span class="self">self</span>, Read},
+};
+
+<span class="kw">use </span>memmap2::Mmap;
+<span class="kw">use </span>object::read::{File <span class="kw">as </span>BinaryFile, Object, ObjectSection};
+<span class="kw">use </span>paths::AbsPath;
+<span class="kw">use </span>snap::read::FrameDecoder <span class="kw">as </span>SnapDecoder;
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub struct </span>RustCInfo {
+    <span class="kw">pub </span>version: (usize, usize, usize),
+    <span class="kw">pub </span>channel: String,
+    <span class="kw">pub </span>commit: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    <span class="kw">pub </span>date: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    <span class="comment">// something like &quot;rustc 1.58.1 (db9d1b20b 2022-01-20)&quot;
+    </span><span class="kw">pub </span>version_string: String,
+}
+
+<span class="doccomment">/// Read rustc dylib information
+</span><span class="kw">pub fn </span>read_dylib_info(dylib_path: <span class="kw-2">&amp;</span>AbsPath) -&gt; io::Result&lt;RustCInfo&gt; {
+    <span class="macro">macro_rules! </span>err {
+        (<span class="macro-nonterminal">$e</span>:literal) =&gt; {
+            io::Error::new(io::ErrorKind::InvalidData, <span class="macro-nonterminal">$e</span>)
+        };
+    }
+
+    <span class="kw">let </span>ver_str = read_version(dylib_path)<span class="question-mark">?</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>items = ver_str.split_whitespace();
+    <span class="kw">let </span>tag = items.next().ok_or_else(|| <span class="macro">err!</span>(<span class="string">&quot;version format error&quot;</span>))<span class="question-mark">?</span>;
+    <span class="kw">if </span>tag != <span class="string">&quot;rustc&quot; </span>{
+        <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="macro">err!</span>(<span class="string">&quot;version format error (No rustc tag)&quot;</span>));
+    }
+
+    <span class="kw">let </span>version_part = items.next().ok_or_else(|| <span class="macro">err!</span>(<span class="string">&quot;no version string&quot;</span>))<span class="question-mark">?</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>version_parts = version_part.split(<span class="string">&#39;-&#39;</span>);
+    <span class="kw">let </span>version = version_parts.next().ok_or_else(|| <span class="macro">err!</span>(<span class="string">&quot;no version&quot;</span>))<span class="question-mark">?</span>;
+    <span class="kw">let </span>channel = version_parts.next().unwrap_or_default().to_string();
+
+    <span class="kw">let </span>commit = <span class="kw">match </span>items.next() {
+        <span class="prelude-val">Some</span>(commit) =&gt; {
+            <span class="kw">match </span>commit.len() {
+                <span class="number">0 </span>=&gt; <span class="prelude-val">None</span>,
+                <span class="kw">_ </span>=&gt; <span class="prelude-val">Some</span>(commit[<span class="number">1</span>..].to_string() <span class="comment">/* remove ( */</span>),
+            }
+        }
+        <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+    };
+    <span class="kw">let </span>date = <span class="kw">match </span>items.next() {
+        <span class="prelude-val">Some</span>(date) =&gt; {
+            <span class="kw">match </span>date.len() {
+                <span class="number">0 </span>=&gt; <span class="prelude-val">None</span>,
+                <span class="kw">_ </span>=&gt; <span class="prelude-val">Some</span>(date[<span class="number">0</span>..date.len() - <span class="number">2</span>].to_string() <span class="comment">/* remove ) */</span>),
+            }
+        }
+        <span class="prelude-val">None </span>=&gt; <span class="prelude-val">None</span>,
+    };
+
+    <span class="kw">let </span>version_numbers = version
+        .split(<span class="string">&#39;.&#39;</span>)
+        .map(|it| it.parse::&lt;usize&gt;())
+        .collect::&lt;<span class="prelude-ty">Result</span>&lt;Vec&lt;<span class="kw">_</span>&gt;, <span class="kw">_</span>&gt;&gt;()
+        .map_err(|<span class="kw">_</span>| <span class="macro">err!</span>(<span class="string">&quot;version number error&quot;</span>))<span class="question-mark">?</span>;
+
+    <span class="kw">if </span>version_numbers.len() != <span class="number">3 </span>{
+        <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="macro">err!</span>(<span class="string">&quot;version number format error&quot;</span>));
+    }
+    <span class="kw">let </span>version = (version_numbers[<span class="number">0</span>], version_numbers[<span class="number">1</span>], version_numbers[<span class="number">2</span>]);
+
+    <span class="prelude-val">Ok</span>(RustCInfo { version, channel, commit, date, version_string: ver_str })
+}
+
+<span class="doccomment">/// This is used inside read_version() to locate the &quot;.rustc&quot; section
+/// from a proc macro crate&#39;s binary file.
+</span><span class="kw">fn </span>read_section&lt;<span class="lifetime">&#39;a</span>&gt;(dylib_binary: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>[u8], section_name: <span class="kw-2">&amp;</span>str) -&gt; io::Result&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>[u8]&gt; {
+    BinaryFile::parse(dylib_binary)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))<span class="question-mark">?
+        </span>.section_by_name(section_name)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, <span class="string">&quot;section read error&quot;</span>))<span class="question-mark">?
+        </span>.data()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+<span class="doccomment">/// Check the version of rustc that was used to compile a proc macro crate&#39;s
+///
+/// binary file.
+/// A proc macro crate binary&#39;s &quot;.rustc&quot; section has following byte layout:
+/// * [b&#39;r&#39;,b&#39;u&#39;,b&#39;s&#39;,b&#39;t&#39;,0,0,0,5] is the first 8 bytes
+/// * ff060000 734e6150 is followed, it&#39;s the snappy format magic bytes,
+///   means bytes from here(including this sequence) are compressed in
+///   snappy compression format. Version info is inside here, so decompress
+///   this.
+/// The bytes you get after decompressing the snappy format portion has
+/// following layout:
+/// * [b&#39;r&#39;,b&#39;u&#39;,b&#39;s&#39;,b&#39;t&#39;,0,0,0,5] is the first 8 bytes(again)
+/// * [crate root bytes] next 4 bytes is to store crate root position,
+///   according to rustc&#39;s source code comment
+/// * [length byte] next 1 byte tells us how many bytes we should read next
+///   for the version string&#39;s utf8 bytes
+/// * [version string bytes encoded in utf8] &lt;- GET THIS BOI
+/// * [some more bytes that we don&#39;t really care but about still there] :-)
+/// Check this issue for more about the bytes layout:
+/// &lt;https://github.com/rust-lang/rust-analyzer/issues/6174&gt;
+</span><span class="kw">pub fn </span>read_version(dylib_path: <span class="kw-2">&amp;</span>AbsPath) -&gt; io::Result&lt;String&gt; {
+    <span class="kw">let </span>dylib_file = File::open(dylib_path)<span class="question-mark">?</span>;
+    <span class="kw">let </span>dylib_mmaped = <span class="kw">unsafe </span>{ Mmap::map(<span class="kw-2">&amp;</span>dylib_file) }<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>dot_rustc = read_section(<span class="kw-2">&amp;</span>dylib_mmaped, <span class="string">&quot;.rustc&quot;</span>)<span class="question-mark">?</span>;
+
+    <span class="comment">// check if magic is valid
+    </span><span class="kw">if </span><span class="kw-2">&amp;</span>dot_rustc[<span class="number">0</span>..<span class="number">4</span>] != <span class="string">b&quot;rust&quot; </span>{
+        <span class="kw">return </span><span class="prelude-val">Err</span>(io::Error::new(
+            io::ErrorKind::InvalidData,
+            <span class="macro">format!</span>(<span class="string">&quot;unknown metadata magic, expected `rust`, found `{:?}`&quot;</span>, <span class="kw-2">&amp;</span>dot_rustc[<span class="number">0</span>..<span class="number">4</span>]),
+        ));
+    }
+    <span class="kw">let </span>version = u32::from_be_bytes([dot_rustc[<span class="number">4</span>], dot_rustc[<span class="number">5</span>], dot_rustc[<span class="number">6</span>], dot_rustc[<span class="number">7</span>]]);
+    <span class="comment">// Last supported version is:
+    // https://github.com/rust-lang/rust/commit/0696e79f2740ad89309269b460579e548a5cd632
+    </span><span class="kw">match </span>version {
+        <span class="number">5 </span>| <span class="number">6 </span>=&gt; {}
+        <span class="kw">_ </span>=&gt; {
+            <span class="kw">return </span><span class="prelude-val">Err</span>(io::Error::new(
+                io::ErrorKind::InvalidData,
+                <span class="macro">format!</span>(<span class="string">&quot;unsupported metadata version {version}&quot;</span>),
+            ));
+        }
+    }
+
+    <span class="kw">let </span>snappy_portion = <span class="kw-2">&amp;</span>dot_rustc[<span class="number">8</span>..];
+
+    <span class="kw">let </span><span class="kw-2">mut </span>snappy_decoder = SnapDecoder::new(snappy_portion);
+
+    <span class="comment">// the bytes before version string bytes, so this basically is:
+    // 8 bytes for [b&#39;r&#39;,b&#39;u&#39;,b&#39;s&#39;,b&#39;t&#39;,0,0,0,5]
+    // 4 bytes for [crate root bytes]
+    // 1 byte for length of version string
+    // so 13 bytes in total, and we should check the 13th byte
+    // to know the length
+    </span><span class="kw">let </span><span class="kw-2">mut </span>bytes_before_version = [<span class="number">0u8</span>; <span class="number">13</span>];
+    snappy_decoder.read_exact(<span class="kw-2">&amp;mut </span>bytes_before_version)<span class="question-mark">?</span>;
+    <span class="kw">let </span>length = bytes_before_version[<span class="number">12</span>];
+
+    <span class="kw">let </span><span class="kw-2">mut </span>version_string_utf8 = <span class="macro">vec!</span>[<span class="number">0u8</span>; length <span class="kw">as </span>usize];
+    snappy_decoder.read_exact(<span class="kw-2">&amp;mut </span>version_string_utf8)<span class="question-mark">?</span>;
+    <span class="kw">let </span>version_string = String::from_utf8(version_string_utf8);
+    version_string.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="proc_macro_api" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>

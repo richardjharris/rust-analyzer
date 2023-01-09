@@ -1,0 +1,656 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/mbe/src/expander/transcriber.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>transcriber.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../../normalize.css"><link rel="stylesheet" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../../ayu.css" disabled><link rel="stylesheet" href="../../../dark.css" disabled><link rel="stylesheet" href="../../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../../storage.js"></script><script defer src="../../../source-script.js"></script><script defer src="../../../source-files.js"></script><script defer src="../../../main.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../../mbe/index.html"><img class="rust-logo" src="../../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Transcriber takes a template, like `fn $ident() {}`, a set of bindings like
+//! `$ident =&gt; foo`, interpolates variables in the template, to get `fn foo() {}`
+
+</span><span class="kw">use </span>syntax::SmolStr;
+<span class="kw">use </span>tt::{Delimiter, Subtree};
+
+<span class="kw">use crate</span>::{
+    expander::{Binding, Bindings, Fragment},
+    parser::{MetaVarKind, Op, RepeatKind, Separator},
+    ExpandError, ExpandResult, MetaTemplate,
+};
+
+<span class="kw">impl </span>Bindings {
+    <span class="kw">fn </span>contains(<span class="kw-2">&amp;</span><span class="self">self</span>, name: <span class="kw-2">&amp;</span>str) -&gt; bool {
+        <span class="self">self</span>.inner.contains_key(name)
+    }
+
+    <span class="kw">fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, name: <span class="kw-2">&amp;</span>str, nesting: <span class="kw-2">&amp;mut </span>[NestingState]) -&gt; <span class="prelude-ty">Result</span>&lt;Fragment, ExpandError&gt; {
+        <span class="macro">macro_rules! </span>binding_err {
+            ($(<span class="macro-nonterminal">$arg</span>:tt)<span class="kw-2">*</span>) =&gt; { ExpandError::binding_error(<span class="macro">format!</span>($(<span class="macro-nonterminal">$arg</span>)<span class="kw-2">*</span>)) };
+        }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>b: <span class="kw-2">&amp;</span>Binding =
+            <span class="self">self</span>.inner.get(name).ok_or_else(|| <span class="macro">binding_err!</span>(<span class="string">&quot;could not find binding `{name}`&quot;</span>))<span class="question-mark">?</span>;
+        <span class="kw">for </span>nesting_state <span class="kw">in </span>nesting.iter_mut() {
+            nesting_state.hit = <span class="bool-val">true</span>;
+            b = <span class="kw">match </span>b {
+                Binding::Fragment(<span class="kw">_</span>) =&gt; <span class="kw">break</span>,
+                Binding::Missing(<span class="kw">_</span>) =&gt; <span class="kw">break</span>,
+                Binding::Nested(bs) =&gt; bs.get(nesting_state.idx).ok_or_else(|| {
+                    nesting_state.at_end = <span class="bool-val">true</span>;
+                    <span class="macro">binding_err!</span>(<span class="string">&quot;could not find nested binding `{name}`&quot;</span>)
+                })<span class="question-mark">?</span>,
+                Binding::Empty =&gt; {
+                    nesting_state.at_end = <span class="bool-val">true</span>;
+                    <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="macro">binding_err!</span>(<span class="string">&quot;could not find empty binding `{name}`&quot;</span>));
+                }
+            };
+        }
+        <span class="kw">match </span>b {
+            Binding::Fragment(it) =&gt; <span class="prelude-val">Ok</span>(it.clone()),
+            <span class="comment">// emit some reasonable default expansion for missing bindings,
+            // this gives better recovery than emitting the `$fragment-name` verbatim
+            </span>Binding::Missing(it) =&gt; <span class="prelude-val">Ok</span>(<span class="kw">match </span>it {
+                MetaVarKind::Stmt =&gt; {
+                    Fragment::Tokens(tt::TokenTree::Leaf(tt::Leaf::Punct(tt::Punct {
+                        id: tt::TokenId::unspecified(),
+                        char: <span class="string">&#39;;&#39;</span>,
+                        spacing: tt::Spacing::Alone,
+                    })))
+                }
+                MetaVarKind::Block =&gt; Fragment::Tokens(tt::TokenTree::Subtree(tt::Subtree {
+                    delimiter: <span class="prelude-val">Some</span>(tt::Delimiter {
+                        id: tt::TokenId::unspecified(),
+                        kind: tt::DelimiterKind::Brace,
+                    }),
+                    token_trees: <span class="macro">vec!</span>[],
+                })),
+                <span class="comment">// FIXME: Meta and Item should get proper defaults
+                </span>MetaVarKind::Meta | MetaVarKind::Item | MetaVarKind::Tt | MetaVarKind::Vis =&gt; {
+                    Fragment::Tokens(tt::TokenTree::Subtree(tt::Subtree {
+                        delimiter: <span class="prelude-val">None</span>,
+                        token_trees: <span class="macro">vec!</span>[],
+                    }))
+                }
+                MetaVarKind::Path
+                | MetaVarKind::Ty
+                | MetaVarKind::Pat
+                | MetaVarKind::PatParam
+                | MetaVarKind::Expr
+                | MetaVarKind::Ident =&gt; {
+                    Fragment::Tokens(tt::TokenTree::Leaf(tt::Leaf::Ident(tt::Ident {
+                        text: SmolStr::new_inline(<span class="string">&quot;missing&quot;</span>),
+                        id: tt::TokenId::unspecified(),
+                    })))
+                }
+                MetaVarKind::Lifetime =&gt; {
+                    Fragment::Tokens(tt::TokenTree::Leaf(tt::Leaf::Ident(tt::Ident {
+                        text: SmolStr::new_inline(<span class="string">&quot;&#39;missing&quot;</span>),
+                        id: tt::TokenId::unspecified(),
+                    })))
+                }
+                MetaVarKind::Literal =&gt; {
+                    Fragment::Tokens(tt::TokenTree::Leaf(tt::Leaf::Ident(tt::Ident {
+                        text: SmolStr::new_inline(<span class="string">&quot;\&quot;missing\&quot;&quot;</span>),
+                        id: tt::TokenId::unspecified(),
+                    })))
+                }
+            }),
+            Binding::Nested(<span class="kw">_</span>) =&gt; {
+                <span class="prelude-val">Err</span>(<span class="macro">binding_err!</span>(<span class="string">&quot;expected simple binding, found nested binding `{name}`&quot;</span>))
+            }
+            Binding::Empty =&gt; {
+                <span class="prelude-val">Err</span>(<span class="macro">binding_err!</span>(<span class="string">&quot;expected simple binding, found empty binding `{name}`&quot;</span>))
+            }
+        }
+    }
+}
+
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>transcribe(
+    template: <span class="kw-2">&amp;</span>MetaTemplate,
+    bindings: <span class="kw-2">&amp;</span>Bindings,
+) -&gt; ExpandResult&lt;tt::Subtree&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>ctx = ExpandCtx { bindings, nesting: Vec::new() };
+    <span class="kw">let </span><span class="kw-2">mut </span>arena: Vec&lt;tt::TokenTree&gt; = Vec::new();
+    expand_subtree(<span class="kw-2">&amp;mut </span>ctx, template, <span class="prelude-val">None</span>, <span class="kw-2">&amp;mut </span>arena)
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">struct </span>NestingState {
+    idx: usize,
+    <span class="doccomment">/// `hit` is currently necessary to tell `expand_repeat` if it should stop
+    /// because there is no variable in use by the current repetition
+    </span>hit: bool,
+    <span class="doccomment">/// `at_end` is currently necessary to tell `expand_repeat` if it should stop
+    /// because there is no more value available for the current repetition
+    </span>at_end: bool,
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">struct </span>ExpandCtx&lt;<span class="lifetime">&#39;a</span>&gt; {
+    bindings: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Bindings,
+    nesting: Vec&lt;NestingState&gt;,
+}
+
+<span class="kw">fn </span>expand_subtree(
+    ctx: <span class="kw-2">&amp;mut </span>ExpandCtx&lt;<span class="lifetime">&#39;_</span>&gt;,
+    template: <span class="kw-2">&amp;</span>MetaTemplate,
+    delimiter: <span class="prelude-ty">Option</span>&lt;Delimiter&gt;,
+    arena: <span class="kw-2">&amp;mut </span>Vec&lt;tt::TokenTree&gt;,
+) -&gt; ExpandResult&lt;tt::Subtree&gt; {
+    <span class="comment">// remember how many elements are in the arena now - when returning, we want to drain exactly how many elements we added. This way, the recursive uses of the arena get their own &quot;view&quot; of the arena, but will reuse the allocation
+    </span><span class="kw">let </span>start_elements = arena.len();
+    <span class="kw">let </span><span class="kw-2">mut </span>err = <span class="prelude-val">None</span>;
+    <span class="kw">for </span>op <span class="kw">in </span>template.iter() {
+        <span class="kw">match </span>op {
+            Op::Literal(it) =&gt; arena.push(tt::Leaf::from(it.clone()).into()),
+            Op::Ident(it) =&gt; arena.push(tt::Leaf::from(it.clone()).into()),
+            Op::Punct(puncts) =&gt; {
+                <span class="kw">for </span>punct <span class="kw">in </span>puncts {
+                    arena.push(tt::Leaf::from(punct.clone()).into());
+                }
+            }
+            Op::Subtree { tokens, delimiter } =&gt; {
+                <span class="kw">let </span>ExpandResult { value: tt, err: e } =
+                    expand_subtree(ctx, tokens, <span class="kw-2">*</span>delimiter, arena);
+                err = err.or(e);
+                arena.push(tt.into());
+            }
+            Op::Var { name, id, .. } =&gt; {
+                <span class="kw">let </span>ExpandResult { value: fragment, err: e } = expand_var(ctx, name, <span class="kw-2">*</span>id);
+                err = err.or(e);
+                push_fragment(arena, fragment);
+            }
+            Op::Repeat { tokens: subtree, kind, separator } =&gt; {
+                <span class="kw">let </span>ExpandResult { value: fragment, err: e } =
+                    expand_repeat(ctx, subtree, <span class="kw-2">*</span>kind, separator, arena);
+                err = err.or(e);
+                push_fragment(arena, fragment)
+            }
+            Op::Ignore { name, id } =&gt; {
+                <span class="comment">// Expand the variable, but ignore the result. This registers the repetition count.
+                </span>expand_var(ctx, name, <span class="kw-2">*</span>id);
+            }
+            Op::Index { depth } =&gt; {
+                <span class="kw">let </span>index = ctx
+                    .nesting
+                    .get(ctx.nesting.len() - <span class="number">1 </span>- (<span class="kw-2">*</span>depth <span class="kw">as </span>usize))
+                    .map_or(<span class="number">0</span>, |nest| nest.idx);
+                arena.push(
+                    tt::Leaf::Literal(tt::Literal {
+                        text: index.to_string().into(),
+                        id: tt::TokenId::unspecified(),
+                    })
+                    .into(),
+                );
+            }
+        }
+    }
+    <span class="comment">// drain the elements added in this instance of expand_subtree
+    </span><span class="kw">let </span>tts = arena.drain(start_elements..).collect();
+    ExpandResult { value: tt::Subtree { delimiter, token_trees: tts }, err }
+}
+
+<span class="kw">fn </span>expand_var(ctx: <span class="kw-2">&amp;mut </span>ExpandCtx&lt;<span class="lifetime">&#39;_</span>&gt;, v: <span class="kw-2">&amp;</span>SmolStr, id: tt::TokenId) -&gt; ExpandResult&lt;Fragment&gt; {
+    <span class="comment">// We already handle $crate case in mbe parser
+    </span><span class="macro">debug_assert!</span>(v != <span class="string">&quot;crate&quot;</span>);
+
+    <span class="kw">if </span>!ctx.bindings.contains(v) {
+        <span class="comment">// Note that it is possible to have a `$var` inside a macro which is not bound.
+        // For example:
+        // ```
+        // macro_rules! foo {
+        //     ($a:ident, $b:ident, $c:tt) =&gt; {
+        //         macro_rules! bar {
+        //             ($bi:ident) =&gt; {
+        //                 fn $bi() -&gt; u8 {$c}
+        //             }
+        //         }
+        //     }
+        // ```
+        // We just treat it a normal tokens
+        </span><span class="kw">let </span>tt = tt::Subtree {
+            delimiter: <span class="prelude-val">None</span>,
+            token_trees: <span class="macro">vec!</span>[
+                tt::Leaf::from(tt::Punct { char: <span class="string">&#39;$&#39;</span>, spacing: tt::Spacing::Alone, id }).into(),
+                tt::Leaf::from(tt::Ident { text: v.clone(), id }).into(),
+            ],
+        }
+        .into();
+        ExpandResult::ok(Fragment::Tokens(tt))
+    } <span class="kw">else </span>{
+        ctx.bindings.get(v, <span class="kw-2">&amp;mut </span>ctx.nesting).map_or_else(
+            |e| ExpandResult { value: Fragment::Tokens(tt::TokenTree::empty()), err: <span class="prelude-val">Some</span>(e) },
+            |it| ExpandResult::ok(it),
+        )
+    }
+}
+
+<span class="kw">fn </span>expand_repeat(
+    ctx: <span class="kw-2">&amp;mut </span>ExpandCtx&lt;<span class="lifetime">&#39;_</span>&gt;,
+    template: <span class="kw-2">&amp;</span>MetaTemplate,
+    kind: RepeatKind,
+    separator: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;Separator&gt;,
+    arena: <span class="kw-2">&amp;mut </span>Vec&lt;tt::TokenTree&gt;,
+) -&gt; ExpandResult&lt;Fragment&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>buf: Vec&lt;tt::TokenTree&gt; = Vec::new();
+    ctx.nesting.push(NestingState { idx: <span class="number">0</span>, at_end: <span class="bool-val">false</span>, hit: <span class="bool-val">false </span>});
+    <span class="comment">// Dirty hack to make macro-expansion terminate.
+    // This should be replaced by a proper macro-by-example implementation
+    </span><span class="kw">let </span>limit = <span class="number">65536</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>has_seps = <span class="number">0</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>counter = <span class="number">0</span>;
+
+    <span class="kw">loop </span>{
+        <span class="kw">let </span>ExpandResult { value: <span class="kw-2">mut </span>t, err: e } = expand_subtree(ctx, template, <span class="prelude-val">None</span>, arena);
+        <span class="kw">let </span>nesting_state = ctx.nesting.last_mut().unwrap();
+        <span class="kw">if </span>nesting_state.at_end || !nesting_state.hit {
+            <span class="kw">break</span>;
+        }
+        nesting_state.idx += <span class="number">1</span>;
+        nesting_state.hit = <span class="bool-val">false</span>;
+
+        counter += <span class="number">1</span>;
+        <span class="kw">if </span>counter == limit {
+            <span class="macro">tracing::warn!</span>(
+                <span class="string">&quot;expand_tt in repeat pattern exceed limit =&gt; {:#?}\n{:#?}&quot;</span>,
+                template,
+                ctx
+            );
+            <span class="kw">return </span>ExpandResult {
+                value: Fragment::Tokens(Subtree::default().into()),
+                err: <span class="prelude-val">Some</span>(ExpandError::LimitExceeded),
+            };
+        }
+
+        <span class="kw">if </span>e.is_some() {
+            <span class="kw">continue</span>;
+        }
+
+        t.delimiter = <span class="prelude-val">None</span>;
+        push_subtree(<span class="kw-2">&amp;mut </span>buf, t);
+
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(sep) = separator {
+            has_seps = <span class="kw">match </span>sep {
+                Separator::Ident(ident) =&gt; {
+                    buf.push(tt::Leaf::from(ident.clone()).into());
+                    <span class="number">1
+                </span>}
+                Separator::Literal(lit) =&gt; {
+                    buf.push(tt::Leaf::from(lit.clone()).into());
+                    <span class="number">1
+                </span>}
+                Separator::Puncts(puncts) =&gt; {
+                    <span class="kw">for </span><span class="kw-2">&amp;</span>punct <span class="kw">in </span>puncts {
+                        buf.push(tt::Leaf::from(punct).into());
+                    }
+                    puncts.len()
+                }
+            };
+        }
+
+        <span class="kw">if </span>RepeatKind::ZeroOrOne == kind {
+            <span class="kw">break</span>;
+        }
+    }
+
+    ctx.nesting.pop().unwrap();
+    <span class="kw">for _ in </span><span class="number">0</span>..has_seps {
+        buf.pop();
+    }
+
+    <span class="comment">// Check if it is a single token subtree without any delimiter
+    // e.g {Delimiter:None&gt; [&#39;&gt;&#39;] /Delimiter:None&gt;}
+    </span><span class="kw">let </span>tt = tt::Subtree { delimiter: <span class="prelude-val">None</span>, token_trees: buf }.into();
+
+    <span class="kw">if </span>RepeatKind::OneOrMore == kind &amp;&amp; counter == <span class="number">0 </span>{
+        <span class="kw">return </span>ExpandResult {
+            value: Fragment::Tokens(tt),
+            err: <span class="prelude-val">Some</span>(ExpandError::UnexpectedToken),
+        };
+    }
+    ExpandResult::ok(Fragment::Tokens(tt))
+}
+
+<span class="kw">fn </span>push_fragment(buf: <span class="kw-2">&amp;mut </span>Vec&lt;tt::TokenTree&gt;, fragment: Fragment) {
+    <span class="kw">match </span>fragment {
+        Fragment::Tokens(tt::TokenTree::Subtree(tt)) =&gt; push_subtree(buf, tt),
+        Fragment::Expr(tt::TokenTree::Subtree(<span class="kw-2">mut </span>tt)) =&gt; {
+            <span class="kw">if </span>tt.delimiter.is_none() {
+                tt.delimiter = <span class="prelude-val">Some</span>(tt::Delimiter {
+                    id: tt::TokenId::unspecified(),
+                    kind: tt::DelimiterKind::Parenthesis,
+                })
+            }
+            buf.push(tt.into())
+        }
+        Fragment::Tokens(tt) | Fragment::Expr(tt) =&gt; buf.push(tt),
+    }
+}
+
+<span class="kw">fn </span>push_subtree(buf: <span class="kw-2">&amp;mut </span>Vec&lt;tt::TokenTree&gt;, tt: tt::Subtree) {
+    <span class="kw">match </span>tt.delimiter {
+        <span class="prelude-val">None </span>=&gt; buf.extend(tt.token_trees),
+        <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; buf.push(tt.into()),
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="mbe" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>

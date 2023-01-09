@@ -1,0 +1,2356 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/hir-ty/src/infer.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>infer.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../hir_ty/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
+<span id="618">618</span>
+<span id="619">619</span>
+<span id="620">620</span>
+<span id="621">621</span>
+<span id="622">622</span>
+<span id="623">623</span>
+<span id="624">624</span>
+<span id="625">625</span>
+<span id="626">626</span>
+<span id="627">627</span>
+<span id="628">628</span>
+<span id="629">629</span>
+<span id="630">630</span>
+<span id="631">631</span>
+<span id="632">632</span>
+<span id="633">633</span>
+<span id="634">634</span>
+<span id="635">635</span>
+<span id="636">636</span>
+<span id="637">637</span>
+<span id="638">638</span>
+<span id="639">639</span>
+<span id="640">640</span>
+<span id="641">641</span>
+<span id="642">642</span>
+<span id="643">643</span>
+<span id="644">644</span>
+<span id="645">645</span>
+<span id="646">646</span>
+<span id="647">647</span>
+<span id="648">648</span>
+<span id="649">649</span>
+<span id="650">650</span>
+<span id="651">651</span>
+<span id="652">652</span>
+<span id="653">653</span>
+<span id="654">654</span>
+<span id="655">655</span>
+<span id="656">656</span>
+<span id="657">657</span>
+<span id="658">658</span>
+<span id="659">659</span>
+<span id="660">660</span>
+<span id="661">661</span>
+<span id="662">662</span>
+<span id="663">663</span>
+<span id="664">664</span>
+<span id="665">665</span>
+<span id="666">666</span>
+<span id="667">667</span>
+<span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
+<span id="674">674</span>
+<span id="675">675</span>
+<span id="676">676</span>
+<span id="677">677</span>
+<span id="678">678</span>
+<span id="679">679</span>
+<span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
+<span id="743">743</span>
+<span id="744">744</span>
+<span id="745">745</span>
+<span id="746">746</span>
+<span id="747">747</span>
+<span id="748">748</span>
+<span id="749">749</span>
+<span id="750">750</span>
+<span id="751">751</span>
+<span id="752">752</span>
+<span id="753">753</span>
+<span id="754">754</span>
+<span id="755">755</span>
+<span id="756">756</span>
+<span id="757">757</span>
+<span id="758">758</span>
+<span id="759">759</span>
+<span id="760">760</span>
+<span id="761">761</span>
+<span id="762">762</span>
+<span id="763">763</span>
+<span id="764">764</span>
+<span id="765">765</span>
+<span id="766">766</span>
+<span id="767">767</span>
+<span id="768">768</span>
+<span id="769">769</span>
+<span id="770">770</span>
+<span id="771">771</span>
+<span id="772">772</span>
+<span id="773">773</span>
+<span id="774">774</span>
+<span id="775">775</span>
+<span id="776">776</span>
+<span id="777">777</span>
+<span id="778">778</span>
+<span id="779">779</span>
+<span id="780">780</span>
+<span id="781">781</span>
+<span id="782">782</span>
+<span id="783">783</span>
+<span id="784">784</span>
+<span id="785">785</span>
+<span id="786">786</span>
+<span id="787">787</span>
+<span id="788">788</span>
+<span id="789">789</span>
+<span id="790">790</span>
+<span id="791">791</span>
+<span id="792">792</span>
+<span id="793">793</span>
+<span id="794">794</span>
+<span id="795">795</span>
+<span id="796">796</span>
+<span id="797">797</span>
+<span id="798">798</span>
+<span id="799">799</span>
+<span id="800">800</span>
+<span id="801">801</span>
+<span id="802">802</span>
+<span id="803">803</span>
+<span id="804">804</span>
+<span id="805">805</span>
+<span id="806">806</span>
+<span id="807">807</span>
+<span id="808">808</span>
+<span id="809">809</span>
+<span id="810">810</span>
+<span id="811">811</span>
+<span id="812">812</span>
+<span id="813">813</span>
+<span id="814">814</span>
+<span id="815">815</span>
+<span id="816">816</span>
+<span id="817">817</span>
+<span id="818">818</span>
+<span id="819">819</span>
+<span id="820">820</span>
+<span id="821">821</span>
+<span id="822">822</span>
+<span id="823">823</span>
+<span id="824">824</span>
+<span id="825">825</span>
+<span id="826">826</span>
+<span id="827">827</span>
+<span id="828">828</span>
+<span id="829">829</span>
+<span id="830">830</span>
+<span id="831">831</span>
+<span id="832">832</span>
+<span id="833">833</span>
+<span id="834">834</span>
+<span id="835">835</span>
+<span id="836">836</span>
+<span id="837">837</span>
+<span id="838">838</span>
+<span id="839">839</span>
+<span id="840">840</span>
+<span id="841">841</span>
+<span id="842">842</span>
+<span id="843">843</span>
+<span id="844">844</span>
+<span id="845">845</span>
+<span id="846">846</span>
+<span id="847">847</span>
+<span id="848">848</span>
+<span id="849">849</span>
+<span id="850">850</span>
+<span id="851">851</span>
+<span id="852">852</span>
+<span id="853">853</span>
+<span id="854">854</span>
+<span id="855">855</span>
+<span id="856">856</span>
+<span id="857">857</span>
+<span id="858">858</span>
+<span id="859">859</span>
+<span id="860">860</span>
+<span id="861">861</span>
+<span id="862">862</span>
+<span id="863">863</span>
+<span id="864">864</span>
+<span id="865">865</span>
+<span id="866">866</span>
+<span id="867">867</span>
+<span id="868">868</span>
+<span id="869">869</span>
+<span id="870">870</span>
+<span id="871">871</span>
+<span id="872">872</span>
+<span id="873">873</span>
+<span id="874">874</span>
+<span id="875">875</span>
+<span id="876">876</span>
+<span id="877">877</span>
+<span id="878">878</span>
+<span id="879">879</span>
+<span id="880">880</span>
+<span id="881">881</span>
+<span id="882">882</span>
+<span id="883">883</span>
+<span id="884">884</span>
+<span id="885">885</span>
+<span id="886">886</span>
+<span id="887">887</span>
+<span id="888">888</span>
+<span id="889">889</span>
+<span id="890">890</span>
+<span id="891">891</span>
+<span id="892">892</span>
+<span id="893">893</span>
+<span id="894">894</span>
+<span id="895">895</span>
+<span id="896">896</span>
+<span id="897">897</span>
+<span id="898">898</span>
+<span id="899">899</span>
+<span id="900">900</span>
+<span id="901">901</span>
+<span id="902">902</span>
+<span id="903">903</span>
+<span id="904">904</span>
+<span id="905">905</span>
+<span id="906">906</span>
+<span id="907">907</span>
+<span id="908">908</span>
+<span id="909">909</span>
+<span id="910">910</span>
+<span id="911">911</span>
+<span id="912">912</span>
+<span id="913">913</span>
+<span id="914">914</span>
+<span id="915">915</span>
+<span id="916">916</span>
+<span id="917">917</span>
+<span id="918">918</span>
+<span id="919">919</span>
+<span id="920">920</span>
+<span id="921">921</span>
+<span id="922">922</span>
+<span id="923">923</span>
+<span id="924">924</span>
+<span id="925">925</span>
+<span id="926">926</span>
+<span id="927">927</span>
+<span id="928">928</span>
+<span id="929">929</span>
+<span id="930">930</span>
+<span id="931">931</span>
+<span id="932">932</span>
+<span id="933">933</span>
+<span id="934">934</span>
+<span id="935">935</span>
+<span id="936">936</span>
+<span id="937">937</span>
+<span id="938">938</span>
+<span id="939">939</span>
+<span id="940">940</span>
+<span id="941">941</span>
+<span id="942">942</span>
+<span id="943">943</span>
+<span id="944">944</span>
+<span id="945">945</span>
+<span id="946">946</span>
+<span id="947">947</span>
+<span id="948">948</span>
+<span id="949">949</span>
+<span id="950">950</span>
+<span id="951">951</span>
+<span id="952">952</span>
+<span id="953">953</span>
+<span id="954">954</span>
+<span id="955">955</span>
+<span id="956">956</span>
+<span id="957">957</span>
+<span id="958">958</span>
+<span id="959">959</span>
+<span id="960">960</span>
+<span id="961">961</span>
+<span id="962">962</span>
+<span id="963">963</span>
+<span id="964">964</span>
+<span id="965">965</span>
+<span id="966">966</span>
+<span id="967">967</span>
+<span id="968">968</span>
+<span id="969">969</span>
+<span id="970">970</span>
+<span id="971">971</span>
+<span id="972">972</span>
+<span id="973">973</span>
+<span id="974">974</span>
+<span id="975">975</span>
+<span id="976">976</span>
+<span id="977">977</span>
+<span id="978">978</span>
+<span id="979">979</span>
+<span id="980">980</span>
+<span id="981">981</span>
+<span id="982">982</span>
+<span id="983">983</span>
+<span id="984">984</span>
+<span id="985">985</span>
+<span id="986">986</span>
+<span id="987">987</span>
+<span id="988">988</span>
+<span id="989">989</span>
+<span id="990">990</span>
+<span id="991">991</span>
+<span id="992">992</span>
+<span id="993">993</span>
+<span id="994">994</span>
+<span id="995">995</span>
+<span id="996">996</span>
+<span id="997">997</span>
+<span id="998">998</span>
+<span id="999">999</span>
+<span id="1000">1000</span>
+<span id="1001">1001</span>
+<span id="1002">1002</span>
+<span id="1003">1003</span>
+<span id="1004">1004</span>
+<span id="1005">1005</span>
+<span id="1006">1006</span>
+<span id="1007">1007</span>
+<span id="1008">1008</span>
+<span id="1009">1009</span>
+<span id="1010">1010</span>
+<span id="1011">1011</span>
+<span id="1012">1012</span>
+<span id="1013">1013</span>
+<span id="1014">1014</span>
+<span id="1015">1015</span>
+<span id="1016">1016</span>
+<span id="1017">1017</span>
+<span id="1018">1018</span>
+<span id="1019">1019</span>
+<span id="1020">1020</span>
+<span id="1021">1021</span>
+<span id="1022">1022</span>
+<span id="1023">1023</span>
+<span id="1024">1024</span>
+<span id="1025">1025</span>
+<span id="1026">1026</span>
+<span id="1027">1027</span>
+<span id="1028">1028</span>
+<span id="1029">1029</span>
+<span id="1030">1030</span>
+<span id="1031">1031</span>
+<span id="1032">1032</span>
+<span id="1033">1033</span>
+<span id="1034">1034</span>
+<span id="1035">1035</span>
+<span id="1036">1036</span>
+<span id="1037">1037</span>
+<span id="1038">1038</span>
+<span id="1039">1039</span>
+<span id="1040">1040</span>
+<span id="1041">1041</span>
+<span id="1042">1042</span>
+<span id="1043">1043</span>
+<span id="1044">1044</span>
+<span id="1045">1045</span>
+<span id="1046">1046</span>
+<span id="1047">1047</span>
+<span id="1048">1048</span>
+<span id="1049">1049</span>
+<span id="1050">1050</span>
+<span id="1051">1051</span>
+<span id="1052">1052</span>
+<span id="1053">1053</span>
+<span id="1054">1054</span>
+<span id="1055">1055</span>
+<span id="1056">1056</span>
+<span id="1057">1057</span>
+<span id="1058">1058</span>
+<span id="1059">1059</span>
+<span id="1060">1060</span>
+<span id="1061">1061</span>
+<span id="1062">1062</span>
+<span id="1063">1063</span>
+<span id="1064">1064</span>
+<span id="1065">1065</span>
+<span id="1066">1066</span>
+<span id="1067">1067</span>
+<span id="1068">1068</span>
+<span id="1069">1069</span>
+<span id="1070">1070</span>
+<span id="1071">1071</span>
+<span id="1072">1072</span>
+<span id="1073">1073</span>
+<span id="1074">1074</span>
+<span id="1075">1075</span>
+<span id="1076">1076</span>
+<span id="1077">1077</span>
+<span id="1078">1078</span>
+<span id="1079">1079</span>
+<span id="1080">1080</span>
+<span id="1081">1081</span>
+<span id="1082">1082</span>
+<span id="1083">1083</span>
+<span id="1084">1084</span>
+<span id="1085">1085</span>
+<span id="1086">1086</span>
+<span id="1087">1087</span>
+<span id="1088">1088</span>
+<span id="1089">1089</span>
+<span id="1090">1090</span>
+<span id="1091">1091</span>
+<span id="1092">1092</span>
+<span id="1093">1093</span>
+<span id="1094">1094</span>
+<span id="1095">1095</span>
+<span id="1096">1096</span>
+<span id="1097">1097</span>
+<span id="1098">1098</span>
+<span id="1099">1099</span>
+<span id="1100">1100</span>
+<span id="1101">1101</span>
+<span id="1102">1102</span>
+<span id="1103">1103</span>
+<span id="1104">1104</span>
+<span id="1105">1105</span>
+<span id="1106">1106</span>
+<span id="1107">1107</span>
+<span id="1108">1108</span>
+<span id="1109">1109</span>
+<span id="1110">1110</span>
+<span id="1111">1111</span>
+<span id="1112">1112</span>
+<span id="1113">1113</span>
+<span id="1114">1114</span>
+<span id="1115">1115</span>
+<span id="1116">1116</span>
+<span id="1117">1117</span>
+<span id="1118">1118</span>
+<span id="1119">1119</span>
+<span id="1120">1120</span>
+<span id="1121">1121</span>
+<span id="1122">1122</span>
+<span id="1123">1123</span>
+<span id="1124">1124</span>
+<span id="1125">1125</span>
+<span id="1126">1126</span>
+<span id="1127">1127</span>
+<span id="1128">1128</span>
+<span id="1129">1129</span>
+<span id="1130">1130</span>
+<span id="1131">1131</span>
+<span id="1132">1132</span>
+<span id="1133">1133</span>
+<span id="1134">1134</span>
+<span id="1135">1135</span>
+<span id="1136">1136</span>
+<span id="1137">1137</span>
+<span id="1138">1138</span>
+<span id="1139">1139</span>
+<span id="1140">1140</span>
+<span id="1141">1141</span>
+<span id="1142">1142</span>
+<span id="1143">1143</span>
+<span id="1144">1144</span>
+<span id="1145">1145</span>
+<span id="1146">1146</span>
+<span id="1147">1147</span>
+<span id="1148">1148</span>
+<span id="1149">1149</span>
+<span id="1150">1150</span>
+<span id="1151">1151</span>
+<span id="1152">1152</span>
+<span id="1153">1153</span>
+<span id="1154">1154</span>
+<span id="1155">1155</span>
+<span id="1156">1156</span>
+<span id="1157">1157</span>
+<span id="1158">1158</span>
+<span id="1159">1159</span>
+<span id="1160">1160</span>
+<span id="1161">1161</span>
+<span id="1162">1162</span>
+<span id="1163">1163</span>
+<span id="1164">1164</span>
+<span id="1165">1165</span>
+<span id="1166">1166</span>
+<span id="1167">1167</span>
+<span id="1168">1168</span>
+<span id="1169">1169</span>
+<span id="1170">1170</span>
+<span id="1171">1171</span>
+<span id="1172">1172</span>
+<span id="1173">1173</span>
+<span id="1174">1174</span>
+<span id="1175">1175</span>
+<span id="1176">1176</span>
+<span id="1177">1177</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Type inference, i.e. the process of walking through the code and determining
+//! the type of each expression and pattern.
+//!
+//! For type inference, compare the implementations in rustc (the various
+//! check_* methods in rustc_hir_analysis/check/mod.rs are a good entry point) and
+//! IntelliJ-Rust (org.rust.lang.core.types.infer). Our entry point for
+//! inference here is the `infer` function, which infers the types of all
+//! expressions in a given function.
+//!
+//! During inference, types (i.e. the `Ty` struct) can contain type &#39;variables&#39;
+//! which represent currently unknown types; as we walk through the expressions,
+//! we might determine that certain variables need to be equal to each other, or
+//! to certain types. To record this, we use the union-find implementation from
+//! the `ena` crate, which is extracted from rustc.
+
+</span><span class="kw">use </span>std::ops::Index;
+<span class="kw">use </span>std::sync::Arc;
+
+<span class="kw">use </span>chalk_ir::{cast::Cast, ConstValue, DebruijnIndex, Mutability, Safety, Scalar, TypeFlags};
+<span class="kw">use </span>hir_def::{
+    body::Body,
+    builtin_type::{BuiltinInt, BuiltinType, BuiltinUint},
+    data::{ConstData, StaticData},
+    expr::{BindingAnnotation, ExprId, ExprOrPatId, PatId},
+    lang_item::LangItemTarget,
+    layout::Integer,
+    path::{path, Path},
+    resolver::{HasResolver, ResolveValueResult, Resolver, TypeNs, ValueNs},
+    type_ref::TypeRef,
+    AdtId, AssocItemId, DefWithBodyId, EnumVariantId, FieldId, FunctionId, HasModule,
+    ItemContainerId, Lookup, TraitId, TypeAliasId, VariantId,
+};
+<span class="kw">use </span>hir_expand::name::{name, Name};
+<span class="kw">use </span>itertools::Either;
+<span class="kw">use </span>la_arena::ArenaMap;
+<span class="kw">use </span>rustc_hash::FxHashMap;
+<span class="kw">use </span>stdx::always;
+
+<span class="kw">use crate</span>::{
+    db::HirDatabase, fold_tys, fold_tys_and_consts, infer::coerce::CoerceMany,
+    lower::ImplTraitLoweringMode, to_assoc_type_id, AliasEq, AliasTy, Const, DomainGoal,
+    GenericArg, Goal, ImplTraitId, InEnvironment, Interner, ProjectionTy, Substitution,
+    TraitEnvironment, TraitRef, Ty, TyBuilder, TyExt, TyKind,
+};
+
+<span class="comment">// This lint has a false positive here. See the link below for details.
+//
+// https://github.com/rust-lang/rust/issues/57411
+</span><span class="attribute">#[allow(unreachable_pub)]
+</span><span class="kw">pub use </span>coerce::could_coerce;
+<span class="attribute">#[allow(unreachable_pub)]
+</span><span class="kw">pub use </span>unify::could_unify;
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>unify;
+<span class="kw">mod </span>path;
+<span class="kw">mod </span>expr;
+<span class="kw">mod </span>pat;
+<span class="kw">mod </span>coerce;
+<span class="kw">mod </span>closure;
+
+<span class="doccomment">/// The entry point of type inference.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>infer_query(db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase, def: DefWithBodyId) -&gt; Arc&lt;InferenceResult&gt; {
+    <span class="kw">let </span>_p = profile::span(<span class="string">&quot;infer_query&quot;</span>);
+    <span class="kw">let </span>resolver = def.resolver(db.upcast());
+    <span class="kw">let </span>body = db.body(def);
+    <span class="kw">let </span><span class="kw-2">mut </span>ctx = InferenceContext::new(db, def, <span class="kw-2">&amp;</span>body, resolver);
+
+    <span class="kw">match </span>def {
+        DefWithBodyId::ConstId(c) =&gt; ctx.collect_const(<span class="kw-2">&amp;</span>db.const_data(c)),
+        DefWithBodyId::FunctionId(f) =&gt; ctx.collect_fn(f),
+        DefWithBodyId::StaticId(s) =&gt; ctx.collect_static(<span class="kw-2">&amp;</span>db.static_data(s)),
+        DefWithBodyId::VariantId(v) =&gt; {
+            ctx.return_ty = TyBuilder::builtin(<span class="kw">match </span>db.enum_data(v.parent).variant_body_type() {
+                hir_def::layout::IntegerType::Pointer(signed) =&gt; <span class="kw">match </span>signed {
+                    <span class="bool-val">true </span>=&gt; BuiltinType::Int(BuiltinInt::Isize),
+                    <span class="bool-val">false </span>=&gt; BuiltinType::Uint(BuiltinUint::Usize),
+                },
+                hir_def::layout::IntegerType::Fixed(size, signed) =&gt; <span class="kw">match </span>signed {
+                    <span class="bool-val">true </span>=&gt; BuiltinType::Int(<span class="kw">match </span>size {
+                        Integer::I8 =&gt; BuiltinInt::I8,
+                        Integer::I16 =&gt; BuiltinInt::I16,
+                        Integer::I32 =&gt; BuiltinInt::I32,
+                        Integer::I64 =&gt; BuiltinInt::I64,
+                        Integer::I128 =&gt; BuiltinInt::I128,
+                    }),
+                    <span class="bool-val">false </span>=&gt; BuiltinType::Uint(<span class="kw">match </span>size {
+                        Integer::I8 =&gt; BuiltinUint::U8,
+                        Integer::I16 =&gt; BuiltinUint::U16,
+                        Integer::I32 =&gt; BuiltinUint::U32,
+                        Integer::I64 =&gt; BuiltinUint::U64,
+                        Integer::I128 =&gt; BuiltinUint::U128,
+                    }),
+                },
+            });
+        }
+    }
+
+    ctx.infer_body();
+
+    Arc::new(ctx.resolve_all())
+}
+
+<span class="doccomment">/// Fully normalize all the types found within `ty` in context of `owner` body definition.
+///
+/// This is appropriate to use only after type-check: it assumes
+/// that normalization will succeed, for example.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>normalize(db: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirDatabase, owner: DefWithBodyId, ty: Ty) -&gt; Ty {
+    <span class="kw">if </span>!ty.data(Interner).flags.intersects(TypeFlags::HAS_PROJECTION) {
+        <span class="kw">return </span>ty;
+    }
+    <span class="kw">let </span>krate = owner.module(db.upcast()).krate();
+    <span class="kw">let </span>trait_env = owner
+        .as_generic_def_id()
+        .map_or_else(|| Arc::new(TraitEnvironment::empty(krate)), |d| db.trait_environment(d));
+    <span class="kw">let </span><span class="kw-2">mut </span>table = unify::InferenceTable::new(db, trait_env);
+
+    <span class="kw">let </span>ty_with_vars = table.normalize_associated_types_in(ty);
+    table.resolve_obligations_as_possible();
+    table.propagate_diverging_flag();
+    table.resolve_completely(ty_with_vars)
+}
+
+<span class="doccomment">/// Binding modes inferred for patterns.
+/// &lt;https://doc.rust-lang.org/reference/patterns.html#binding-modes&gt;
+</span><span class="attribute">#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+</span><span class="kw">pub enum </span>BindingMode {
+    Move,
+    Ref(Mutability),
+}
+
+<span class="kw">impl </span>BindingMode {
+    <span class="kw">fn </span>convert(annotation: BindingAnnotation) -&gt; BindingMode {
+        <span class="kw">match </span>annotation {
+            BindingAnnotation::Unannotated | BindingAnnotation::Mutable =&gt; BindingMode::Move,
+            BindingAnnotation::Ref =&gt; BindingMode::Ref(Mutability::Not),
+            BindingAnnotation::RefMut =&gt; BindingMode::Ref(Mutability::Mut),
+        }
+    }
+}
+
+<span class="kw">impl </span>Default <span class="kw">for </span>BindingMode {
+    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+        BindingMode::Move
+    }
+}
+
+<span class="doccomment">/// Used to generalize patterns and assignee expressions.
+</span><span class="kw">trait </span>PatLike: Into&lt;ExprOrPatId&gt; + Copy {
+    <span class="kw">type </span>BindingMode: Copy;
+
+    <span class="kw">fn </span>infer(
+        this: <span class="kw-2">&amp;mut </span>InferenceContext&lt;<span class="lifetime">&#39;_</span>&gt;,
+        id: <span class="self">Self</span>,
+        expected_ty: <span class="kw-2">&amp;</span>Ty,
+        default_bm: <span class="self">Self</span>::BindingMode,
+    ) -&gt; Ty;
+}
+
+<span class="kw">impl </span>PatLike <span class="kw">for </span>ExprId {
+    <span class="kw">type </span>BindingMode = ();
+
+    <span class="kw">fn </span>infer(
+        this: <span class="kw-2">&amp;mut </span>InferenceContext&lt;<span class="lifetime">&#39;_</span>&gt;,
+        id: <span class="self">Self</span>,
+        expected_ty: <span class="kw-2">&amp;</span>Ty,
+        <span class="kw">_</span>: <span class="self">Self</span>::BindingMode,
+    ) -&gt; Ty {
+        this.infer_assignee_expr(id, expected_ty)
+    }
+}
+
+<span class="kw">impl </span>PatLike <span class="kw">for </span>PatId {
+    <span class="kw">type </span>BindingMode = BindingMode;
+
+    <span class="kw">fn </span>infer(
+        this: <span class="kw-2">&amp;mut </span>InferenceContext&lt;<span class="lifetime">&#39;_</span>&gt;,
+        id: <span class="self">Self</span>,
+        expected_ty: <span class="kw-2">&amp;</span>Ty,
+        default_bm: <span class="self">Self</span>::BindingMode,
+    ) -&gt; Ty {
+        this.infer_pat(id, expected_ty, default_bm)
+    }
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>InferOk&lt;T&gt; {
+    value: T,
+    goals: Vec&lt;InEnvironment&lt;Goal&gt;&gt;,
+}
+
+<span class="kw">impl</span>&lt;T&gt; InferOk&lt;T&gt; {
+    <span class="kw">fn </span>map&lt;U&gt;(<span class="self">self</span>, f: <span class="kw">impl </span>FnOnce(T) -&gt; U) -&gt; InferOk&lt;U&gt; {
+        InferOk { value: f(<span class="self">self</span>.value), goals: <span class="self">self</span>.goals }
+    }
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>TypeError;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">type </span>InferResult&lt;T&gt; = <span class="prelude-ty">Result</span>&lt;InferOk&lt;T&gt;, TypeError&gt;;
+
+<span class="attribute">#[derive(Debug, PartialEq, Eq, Clone)]
+</span><span class="kw">pub enum </span>InferenceDiagnostic {
+    NoSuchField { expr: ExprId },
+    PrivateField { expr: ExprId, field: FieldId },
+    PrivateAssocItem { id: ExprOrPatId, item: AssocItemId },
+    BreakOutsideOfLoop { expr: ExprId, is_break: bool },
+    MismatchedArgCount { call_expr: ExprId, expected: usize, found: usize },
+}
+
+<span class="doccomment">/// A mismatch between an expected and an inferred type.
+</span><span class="attribute">#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+</span><span class="kw">pub struct </span>TypeMismatch {
+    <span class="kw">pub </span>expected: Ty,
+    <span class="kw">pub </span>actual: Ty,
+}
+
+<span class="attribute">#[derive(Clone, PartialEq, Eq, Debug)]
+</span><span class="kw">struct </span>InternedStandardTypes {
+    unknown: Ty,
+    bool_: Ty,
+    unit: Ty,
+}
+
+<span class="kw">impl </span>Default <span class="kw">for </span>InternedStandardTypes {
+    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+        InternedStandardTypes {
+            unknown: TyKind::Error.intern(Interner),
+            bool_: TyKind::Scalar(Scalar::Bool).intern(Interner),
+            unit: TyKind::Tuple(<span class="number">0</span>, Substitution::empty(Interner)).intern(Interner),
+        }
+    }
+}
+<span class="doccomment">/// Represents coercing a value to a different type of value.
+///
+/// We transform values by following a number of `Adjust` steps in order.
+/// See the documentation on variants of `Adjust` for more details.
+///
+/// Here are some common scenarios:
+///
+/// 1. The simplest cases are where a pointer is not adjusted fat vs thin.
+///    Here the pointer will be dereferenced N times (where a dereference can
+///    happen to raw or borrowed pointers or any smart pointer which implements
+///    Deref, including Box&lt;_&gt;). The types of dereferences is given by
+///    `autoderefs`. It can then be auto-referenced zero or one times, indicated
+///    by `autoref`, to either a raw or borrowed pointer. In these cases unsize is
+///    `false`.
+///
+/// 2. A thin-to-fat coercion involves unsizing the underlying data. We start
+///    with a thin pointer, deref a number of times, unsize the underlying data,
+///    then autoref. The &#39;unsize&#39; phase may change a fixed length array to a
+///    dynamically sized one, a concrete object to a trait object, or statically
+///    sized struct to a dynamically sized one. E.g., &amp;[i32; 4] -&gt; &amp;[i32] is
+///    represented by:
+///
+///    ```
+///    Deref(None) -&gt; [i32; 4],
+///    Borrow(AutoBorrow::Ref) -&gt; &amp;[i32; 4],
+///    Unsize -&gt; &amp;[i32],
+///    ```
+///
+///    Note that for a struct, the &#39;deep&#39; unsizing of the struct is not recorded.
+///    E.g., `struct Foo&lt;T&gt; { x: T }` we can coerce &amp;Foo&lt;[i32; 4]&gt; to &amp;Foo&lt;[i32]&gt;
+///    The autoderef and -ref are the same as in the above example, but the type
+///    stored in `unsize` is `Foo&lt;[i32]&gt;`, we don&#39;t store any further detail about
+///    the underlying conversions from `[i32; 4]` to `[i32]`.
+///
+/// 3. Coercing a `Box&lt;T&gt;` to `Box&lt;dyn Trait&gt;` is an interesting special case. In
+///    that case, we have the pointer we need coming in, so there are no
+///    autoderefs, and no autoref. Instead we just do the `Unsize` transformation.
+///    At some point, of course, `Box` should move out of the compiler, in which
+///    case this is analogous to transforming a struct. E.g., Box&lt;[i32; 4]&gt; -&gt;
+///    Box&lt;[i32]&gt; is an `Adjust::Unsize` with the target `Box&lt;[i32]&gt;`.
+</span><span class="attribute">#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+</span><span class="kw">pub struct </span>Adjustment {
+    <span class="kw">pub </span>kind: Adjust,
+    <span class="kw">pub </span>target: Ty,
+}
+
+<span class="attribute">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+</span><span class="kw">pub enum </span>Adjust {
+    <span class="doccomment">/// Go from ! to any type.
+    </span>NeverToAny,
+    <span class="doccomment">/// Dereference once, producing a place.
+    </span>Deref(<span class="prelude-ty">Option</span>&lt;OverloadedDeref&gt;),
+    <span class="doccomment">/// Take the address and produce either a `&amp;` or `*` pointer.
+    </span>Borrow(AutoBorrow),
+    Pointer(PointerCast),
+}
+
+<span class="doccomment">/// An overloaded autoderef step, representing a `Deref(Mut)::deref(_mut)`
+/// call, with the signature `&amp;&#39;a T -&gt; &amp;&#39;a U` or `&amp;&#39;a mut T -&gt; &amp;&#39;a mut U`.
+/// The target type is `U` in both cases, with the region and mutability
+/// being those shared by both the receiver and the returned reference.
+</span><span class="attribute">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+</span><span class="kw">pub struct </span>OverloadedDeref(<span class="kw">pub </span>Mutability);
+
+<span class="attribute">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+</span><span class="kw">pub enum </span>AutoBorrow {
+    <span class="doccomment">/// Converts from T to &amp;T.
+    </span>Ref(Mutability),
+    <span class="doccomment">/// Converts from T to *T.
+    </span>RawPtr(Mutability),
+}
+
+<span class="attribute">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+</span><span class="kw">pub enum </span>PointerCast {
+    <span class="doccomment">/// Go from a fn-item type to a fn-pointer type.
+    </span>ReifyFnPointer,
+
+    <span class="doccomment">/// Go from a safe fn pointer to an unsafe fn pointer.
+    </span>UnsafeFnPointer,
+
+    <span class="doccomment">/// Go from a non-capturing closure to an fn pointer or an unsafe fn pointer.
+    /// It cannot convert a closure that requires unsafe.
+    </span>ClosureFnPointer(Safety),
+
+    <span class="doccomment">/// Go from a mut raw pointer to a const raw pointer.
+    </span>MutToConstPointer,
+
+    <span class="attribute">#[allow(dead_code)]
+    </span><span class="doccomment">/// Go from `*const [T; N]` to `*const T`
+    </span>ArrayToPointer,
+
+    <span class="doccomment">/// Unsize a pointer/reference value, e.g., `&amp;[T; n]` to
+    /// `&amp;[T]`. Note that the source could be a thin or fat pointer.
+    /// This will do things like convert thin pointers to fat
+    /// pointers, or convert structs containing thin pointers to
+    /// structs containing fat pointers, or convert between fat
+    /// pointers. We don&#39;t store the details of how the transform is
+    /// done (in fact, we don&#39;t know that, because it might depend on
+    /// the precise type parameters). We just store the target
+    /// type. Codegen backends and miri figure out what has to be done
+    /// based on the precise source/target type at hand.
+    </span>Unsize,
+}
+
+<span class="doccomment">/// The result of type inference: A mapping from expressions and patterns to types.
+</span><span class="attribute">#[derive(Clone, PartialEq, Eq, Debug, Default)]
+</span><span class="kw">pub struct </span>InferenceResult {
+    <span class="doccomment">/// For each method call expr, records the function it resolves to.
+    </span>method_resolutions: FxHashMap&lt;ExprId, (FunctionId, Substitution)&gt;,
+    <span class="doccomment">/// For each field access expr, records the field it resolves to.
+    </span>field_resolutions: FxHashMap&lt;ExprId, FieldId&gt;,
+    <span class="doccomment">/// For each struct literal or pattern, records the variant it resolves to.
+    </span>variant_resolutions: FxHashMap&lt;ExprOrPatId, VariantId&gt;,
+    <span class="doccomment">/// For each associated item record what it resolves to
+    </span>assoc_resolutions: FxHashMap&lt;ExprOrPatId, (AssocItemId, Substitution)&gt;,
+    <span class="kw">pub </span>diagnostics: Vec&lt;InferenceDiagnostic&gt;,
+    <span class="kw">pub </span>type_of_expr: ArenaMap&lt;ExprId, Ty&gt;,
+    <span class="doccomment">/// For each pattern record the type it resolves to.
+    ///
+    /// **Note**: When a pattern type is resolved it may still contain
+    /// unresolved or missing subpatterns or subpatterns of mismatched types.
+    </span><span class="kw">pub </span>type_of_pat: ArenaMap&lt;PatId, Ty&gt;,
+    type_mismatches: FxHashMap&lt;ExprOrPatId, TypeMismatch&gt;,
+    <span class="doccomment">/// Interned common types to return references to.
+    </span>standard_types: InternedStandardTypes,
+    <span class="doccomment">/// Stores the types which were implicitly dereferenced in pattern binding modes.
+    </span><span class="kw">pub </span>pat_adjustments: FxHashMap&lt;PatId, Vec&lt;Ty&gt;&gt;,
+    <span class="kw">pub </span>pat_binding_modes: FxHashMap&lt;PatId, BindingMode&gt;,
+    <span class="kw">pub </span>expr_adjustments: FxHashMap&lt;ExprId, Vec&lt;Adjustment&gt;&gt;,
+}
+
+<span class="kw">impl </span>InferenceResult {
+    <span class="kw">pub fn </span>method_resolution(<span class="kw-2">&amp;</span><span class="self">self</span>, expr: ExprId) -&gt; <span class="prelude-ty">Option</span>&lt;(FunctionId, Substitution)&gt; {
+        <span class="self">self</span>.method_resolutions.get(<span class="kw-2">&amp;</span>expr).cloned()
+    }
+    <span class="kw">pub fn </span>field_resolution(<span class="kw-2">&amp;</span><span class="self">self</span>, expr: ExprId) -&gt; <span class="prelude-ty">Option</span>&lt;FieldId&gt; {
+        <span class="self">self</span>.field_resolutions.get(<span class="kw-2">&amp;</span>expr).copied()
+    }
+    <span class="kw">pub fn </span>variant_resolution_for_expr(<span class="kw-2">&amp;</span><span class="self">self</span>, id: ExprId) -&gt; <span class="prelude-ty">Option</span>&lt;VariantId&gt; {
+        <span class="self">self</span>.variant_resolutions.get(<span class="kw-2">&amp;</span>id.into()).copied()
+    }
+    <span class="kw">pub fn </span>variant_resolution_for_pat(<span class="kw-2">&amp;</span><span class="self">self</span>, id: PatId) -&gt; <span class="prelude-ty">Option</span>&lt;VariantId&gt; {
+        <span class="self">self</span>.variant_resolutions.get(<span class="kw-2">&amp;</span>id.into()).copied()
+    }
+    <span class="kw">pub fn </span>assoc_resolutions_for_expr(<span class="kw-2">&amp;</span><span class="self">self</span>, id: ExprId) -&gt; <span class="prelude-ty">Option</span>&lt;(AssocItemId, Substitution)&gt; {
+        <span class="self">self</span>.assoc_resolutions.get(<span class="kw-2">&amp;</span>id.into()).cloned()
+    }
+    <span class="kw">pub fn </span>assoc_resolutions_for_pat(<span class="kw-2">&amp;</span><span class="self">self</span>, id: PatId) -&gt; <span class="prelude-ty">Option</span>&lt;(AssocItemId, Substitution)&gt; {
+        <span class="self">self</span>.assoc_resolutions.get(<span class="kw-2">&amp;</span>id.into()).cloned()
+    }
+    <span class="kw">pub fn </span>type_mismatch_for_expr(<span class="kw-2">&amp;</span><span class="self">self</span>, expr: ExprId) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>TypeMismatch&gt; {
+        <span class="self">self</span>.type_mismatches.get(<span class="kw-2">&amp;</span>expr.into())
+    }
+    <span class="kw">pub fn </span>type_mismatch_for_pat(<span class="kw-2">&amp;</span><span class="self">self</span>, pat: PatId) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>TypeMismatch&gt; {
+        <span class="self">self</span>.type_mismatches.get(<span class="kw-2">&amp;</span>pat.into())
+    }
+    <span class="kw">pub fn </span>expr_type_mismatches(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = (ExprId, <span class="kw-2">&amp;</span>TypeMismatch)&gt; {
+        <span class="self">self</span>.type_mismatches.iter().filter_map(|(expr_or_pat, mismatch)| <span class="kw">match </span><span class="kw-2">*</span>expr_or_pat {
+            ExprOrPatId::ExprId(expr) =&gt; <span class="prelude-val">Some</span>((expr, mismatch)),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        })
+    }
+    <span class="kw">pub fn </span>pat_type_mismatches(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = (PatId, <span class="kw-2">&amp;</span>TypeMismatch)&gt; {
+        <span class="self">self</span>.type_mismatches.iter().filter_map(|(expr_or_pat, mismatch)| <span class="kw">match </span><span class="kw-2">*</span>expr_or_pat {
+            ExprOrPatId::PatId(pat) =&gt; <span class="prelude-val">Some</span>((pat, mismatch)),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        })
+    }
+}
+
+<span class="kw">impl </span>Index&lt;ExprId&gt; <span class="kw">for </span>InferenceResult {
+    <span class="kw">type </span>Output = Ty;
+
+    <span class="kw">fn </span>index(<span class="kw-2">&amp;</span><span class="self">self</span>, expr: ExprId) -&gt; <span class="kw-2">&amp;</span>Ty {
+        <span class="self">self</span>.type_of_expr.get(expr).unwrap_or(<span class="kw-2">&amp;</span><span class="self">self</span>.standard_types.unknown)
+    }
+}
+
+<span class="kw">impl </span>Index&lt;PatId&gt; <span class="kw">for </span>InferenceResult {
+    <span class="kw">type </span>Output = Ty;
+
+    <span class="kw">fn </span>index(<span class="kw-2">&amp;</span><span class="self">self</span>, pat: PatId) -&gt; <span class="kw-2">&amp;</span>Ty {
+        <span class="self">self</span>.type_of_pat.get(pat).unwrap_or(<span class="kw-2">&amp;</span><span class="self">self</span>.standard_types.unknown)
+    }
+}
+
+<span class="doccomment">/// The inference context contains all information needed during type inference.
+</span><span class="attribute">#[derive(Clone, Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>InferenceContext&lt;<span class="lifetime">&#39;a</span>&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) db: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span><span class="kw">dyn </span>HirDatabase,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) owner: DefWithBodyId,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) body: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Body,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) resolver: Resolver,
+    table: unify::InferenceTable&lt;<span class="lifetime">&#39;a</span>&gt;,
+    trait_env: Arc&lt;TraitEnvironment&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) result: InferenceResult,
+    <span class="doccomment">/// The return type of the function being inferred, the closure or async block if we&#39;re
+    /// currently within one.
+    ///
+    /// We might consider using a nested inference context for checking
+    /// closures, but currently this is the only field that will change there,
+    /// so it doesn&#39;t make sense.
+    </span>return_ty: Ty,
+    <span class="doccomment">/// The resume type and the yield type, respectively, of the generator being inferred.
+    </span>resume_yield_tys: <span class="prelude-ty">Option</span>&lt;(Ty, Ty)&gt;,
+    diverges: Diverges,
+    breakables: Vec&lt;BreakableContext&gt;,
+}
+
+<span class="attribute">#[derive(Clone, Debug)]
+</span><span class="kw">struct </span>BreakableContext {
+    <span class="doccomment">/// Whether this context contains at least one break expression.
+    </span>may_break: bool,
+    <span class="doccomment">/// The coercion target of the context.
+    </span>coerce: CoerceMany,
+    <span class="doccomment">/// The optional label of the context.
+    </span>label: <span class="prelude-ty">Option</span>&lt;name::Name&gt;,
+    kind: BreakableKind,
+}
+
+<span class="attribute">#[derive(Clone, Debug)]
+</span><span class="kw">enum </span>BreakableKind {
+    Block,
+    Loop,
+    <span class="doccomment">/// A border is something like an async block, closure etc. Anything that prevents
+    /// breaking/continuing through
+    </span>Border,
+}
+
+<span class="kw">fn </span>find_breakable&lt;<span class="lifetime">&#39;c</span>&gt;(
+    ctxs: <span class="kw-2">&amp;</span><span class="lifetime">&#39;c </span><span class="kw-2">mut </span>[BreakableContext],
+    label: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>name::Name&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;c </span><span class="kw-2">mut </span>BreakableContext&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>ctxs = ctxs
+        .iter_mut()
+        .rev()
+        .take_while(|it| <span class="macro">matches!</span>(it.kind, BreakableKind::Block | BreakableKind::Loop));
+    <span class="kw">match </span>label {
+        <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; ctxs.find(|ctx| ctx.label.as_ref() == label),
+        <span class="prelude-val">None </span>=&gt; ctxs.find(|ctx| <span class="macro">matches!</span>(ctx.kind, BreakableKind::Loop)),
+    }
+}
+
+<span class="kw">fn </span>find_continuable&lt;<span class="lifetime">&#39;c</span>&gt;(
+    ctxs: <span class="kw-2">&amp;</span><span class="lifetime">&#39;c </span><span class="kw-2">mut </span>[BreakableContext],
+    label: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>name::Name&gt;,
+) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">&#39;c </span><span class="kw-2">mut </span>BreakableContext&gt; {
+    <span class="kw">match </span>label {
+        <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; find_breakable(ctxs, label).filter(|it| <span class="macro">matches!</span>(it.kind, BreakableKind::Loop)),
+        <span class="prelude-val">None </span>=&gt; find_breakable(ctxs, label),
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;a</span>&gt; InferenceContext&lt;<span class="lifetime">&#39;a</span>&gt; {
+    <span class="kw">fn </span>new(
+        db: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span><span class="kw">dyn </span>HirDatabase,
+        owner: DefWithBodyId,
+        body: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span>Body,
+        resolver: Resolver,
+    ) -&gt; <span class="self">Self </span>{
+        <span class="kw">let </span>krate = owner.module(db.upcast()).krate();
+        <span class="kw">let </span>trait_env = owner
+            .as_generic_def_id()
+            .map_or_else(|| Arc::new(TraitEnvironment::empty(krate)), |d| db.trait_environment(d));
+        InferenceContext {
+            result: InferenceResult::default(),
+            table: unify::InferenceTable::new(db, trait_env.clone()),
+            trait_env,
+            return_ty: TyKind::Error.intern(Interner), <span class="comment">// set in collect_* calls
+            </span>resume_yield_tys: <span class="prelude-val">None</span>,
+            db,
+            owner,
+            body,
+            resolver,
+            diverges: Diverges::Maybe,
+            breakables: Vec::new(),
+        }
+    }
+
+    <span class="kw">fn </span>resolve_all(<span class="self">self</span>) -&gt; InferenceResult {
+        <span class="kw">let </span>InferenceContext { <span class="kw-2">mut </span>table, <span class="kw-2">mut </span>result, .. } = <span class="self">self</span>;
+
+        table.fallback_if_possible();
+
+        <span class="comment">// FIXME resolve obligations as well (use Guidance if necessary)
+        </span>table.resolve_obligations_as_possible();
+
+        <span class="comment">// make sure diverging type variables are marked as such
+        </span>table.propagate_diverging_flag();
+        <span class="kw">for </span>ty <span class="kw">in </span>result.type_of_expr.values_mut() {
+            <span class="kw-2">*</span>ty = table.resolve_completely(ty.clone());
+        }
+        <span class="kw">for </span>ty <span class="kw">in </span>result.type_of_pat.values_mut() {
+            <span class="kw-2">*</span>ty = table.resolve_completely(ty.clone());
+        }
+        <span class="kw">for </span>mismatch <span class="kw">in </span>result.type_mismatches.values_mut() {
+            mismatch.expected = table.resolve_completely(mismatch.expected.clone());
+            mismatch.actual = table.resolve_completely(mismatch.actual.clone());
+        }
+        <span class="kw">for </span>(<span class="kw">_</span>, subst) <span class="kw">in </span>result.method_resolutions.values_mut() {
+            <span class="kw-2">*</span>subst = table.resolve_completely(subst.clone());
+        }
+        <span class="kw">for </span>(<span class="kw">_</span>, subst) <span class="kw">in </span>result.assoc_resolutions.values_mut() {
+            <span class="kw-2">*</span>subst = table.resolve_completely(subst.clone());
+        }
+        <span class="kw">for </span>adjustment <span class="kw">in </span>result.expr_adjustments.values_mut().flatten() {
+            adjustment.target = table.resolve_completely(adjustment.target.clone());
+        }
+        <span class="kw">for </span>adjustment <span class="kw">in </span>result.pat_adjustments.values_mut().flatten() {
+            <span class="kw-2">*</span>adjustment = table.resolve_completely(adjustment.clone());
+        }
+        result
+    }
+
+    <span class="kw">fn </span>collect_const(<span class="kw-2">&amp;mut </span><span class="self">self</span>, data: <span class="kw-2">&amp;</span>ConstData) {
+        <span class="self">self</span>.return_ty = <span class="self">self</span>.make_ty(<span class="kw-2">&amp;</span>data.type_ref);
+    }
+
+    <span class="kw">fn </span>collect_static(<span class="kw-2">&amp;mut </span><span class="self">self</span>, data: <span class="kw-2">&amp;</span>StaticData) {
+        <span class="self">self</span>.return_ty = <span class="self">self</span>.make_ty(<span class="kw-2">&amp;</span>data.type_ref);
+    }
+
+    <span class="kw">fn </span>collect_fn(<span class="kw-2">&amp;mut </span><span class="self">self</span>, func: FunctionId) {
+        <span class="kw">let </span>data = <span class="self">self</span>.db.function_data(func);
+        <span class="kw">let </span>ctx = <span class="kw">crate</span>::lower::TyLoweringContext::new(<span class="self">self</span>.db, <span class="kw-2">&amp;</span><span class="self">self</span>.resolver)
+            .with_impl_trait_mode(ImplTraitLoweringMode::Param);
+        <span class="kw">let </span><span class="kw-2">mut </span>param_tys =
+            data.params.iter().map(|(<span class="kw">_</span>, type_ref)| ctx.lower_ty(type_ref)).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+        <span class="comment">// Check if function contains a va_list, if it does then we append it to the parameter types
+        // that are collected from the function data
+        </span><span class="kw">if </span>data.is_varargs() {
+            <span class="kw">let </span>va_list_ty = <span class="kw">match </span><span class="self">self</span>.resolve_va_list() {
+                <span class="prelude-val">Some</span>(va_list) =&gt; TyBuilder::adt(<span class="self">self</span>.db, va_list)
+                    .fill_with_defaults(<span class="self">self</span>.db, || <span class="self">self</span>.table.new_type_var())
+                    .build(),
+                <span class="prelude-val">None </span>=&gt; <span class="self">self</span>.err_ty(),
+            };
+
+            param_tys.push(va_list_ty)
+        }
+        <span class="kw">for </span>(ty, pat) <span class="kw">in </span>param_tys.into_iter().zip(<span class="self">self</span>.body.params.iter()) {
+            <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty);
+            <span class="kw">let </span>ty = <span class="self">self</span>.normalize_associated_types_in(ty);
+
+            <span class="self">self</span>.infer_pat(<span class="kw-2">*</span>pat, <span class="kw-2">&amp;</span>ty, BindingMode::default());
+        }
+        <span class="kw">let </span>error_ty = <span class="kw-2">&amp;</span>TypeRef::Error;
+        <span class="kw">let </span>return_ty = <span class="kw">if </span>data.has_async_kw() {
+            data.async_ret_type.as_deref().unwrap_or(error_ty)
+        } <span class="kw">else </span>{
+            <span class="kw-2">&amp;*</span>data.ret_type
+        };
+
+        <span class="kw">let </span>ctx = <span class="kw">crate</span>::lower::TyLoweringContext::new(<span class="self">self</span>.db, <span class="kw-2">&amp;</span><span class="self">self</span>.resolver)
+            .with_impl_trait_mode(ImplTraitLoweringMode::Opaque);
+        <span class="kw">let </span>return_ty = ctx.lower_ty(return_ty);
+        <span class="kw">let </span>return_ty = <span class="self">self</span>.insert_type_vars(return_ty);
+
+        <span class="kw">let </span>return_ty = <span class="kw">if let </span><span class="prelude-val">Some</span>(rpits) = <span class="self">self</span>.db.return_type_impl_traits(func) {
+            <span class="comment">// RPIT opaque types use substitution of their parent function.
+            </span><span class="kw">let </span>fn_placeholders = TyBuilder::placeholder_subst(<span class="self">self</span>.db, func);
+            fold_tys(
+                return_ty,
+                |ty, <span class="kw">_</span>| {
+                    <span class="kw">let </span>opaque_ty_id = <span class="kw">match </span>ty.kind(Interner) {
+                        TyKind::OpaqueType(opaque_ty_id, <span class="kw">_</span>) =&gt; <span class="kw-2">*</span>opaque_ty_id,
+                        <span class="kw">_ </span>=&gt; <span class="kw">return </span>ty,
+                    };
+                    <span class="kw">let </span>idx = <span class="kw">match </span><span class="self">self</span>.db.lookup_intern_impl_trait_id(opaque_ty_id.into()) {
+                        ImplTraitId::ReturnTypeImplTrait(<span class="kw">_</span>, idx) =&gt; idx,
+                        <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+                    };
+                    <span class="kw">let </span>bounds = (<span class="kw-2">*</span>rpits).map_ref(|rpits| {
+                        rpits.impl_traits[idx <span class="kw">as </span>usize].bounds.map_ref(|it| it.into_iter())
+                    });
+                    <span class="kw">let </span>var = <span class="self">self</span>.table.new_type_var();
+                    <span class="kw">let </span>var_subst = Substitution::from1(Interner, var.clone());
+                    <span class="kw">for </span>bound <span class="kw">in </span>bounds {
+                        <span class="kw">let </span>predicate =
+                            bound.map(|it| it.cloned()).substitute(Interner, <span class="kw-2">&amp;</span>fn_placeholders);
+                        <span class="kw">let </span>(var_predicate, binders) = predicate
+                            .substitute(Interner, <span class="kw-2">&amp;</span>var_subst)
+                            .into_value_and_skipped_binders();
+                        <span class="macro">always!</span>(binders.is_empty(Interner)); <span class="comment">// quantified where clauses not yet handled
+                        </span><span class="self">self</span>.push_obligation(var_predicate.cast(Interner));
+                    }
+                    var
+                },
+                DebruijnIndex::INNERMOST,
+            )
+        } <span class="kw">else </span>{
+            return_ty
+        };
+
+        <span class="self">self</span>.return_ty = <span class="self">self</span>.normalize_associated_types_in(return_ty);
+    }
+
+    <span class="kw">fn </span>infer_body(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+        <span class="self">self</span>.infer_expr_coerce(<span class="self">self</span>.body.body_expr, <span class="kw-2">&amp;</span>Expectation::has_type(<span class="self">self</span>.return_ty.clone()));
+    }
+
+    <span class="kw">fn </span>write_expr_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: ExprId, ty: Ty) {
+        <span class="self">self</span>.result.type_of_expr.insert(expr, ty);
+    }
+
+    <span class="kw">fn </span>write_expr_adj(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: ExprId, adjustments: Vec&lt;Adjustment&gt;) {
+        <span class="self">self</span>.result.expr_adjustments.insert(expr, adjustments);
+    }
+
+    <span class="kw">fn </span>write_method_resolution(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: ExprId, func: FunctionId, subst: Substitution) {
+        <span class="self">self</span>.result.method_resolutions.insert(expr, (func, subst));
+    }
+
+    <span class="kw">fn </span>write_variant_resolution(<span class="kw-2">&amp;mut </span><span class="self">self</span>, id: ExprOrPatId, variant: VariantId) {
+        <span class="self">self</span>.result.variant_resolutions.insert(id, variant);
+    }
+
+    <span class="kw">fn </span>write_assoc_resolution(<span class="kw-2">&amp;mut </span><span class="self">self</span>, id: ExprOrPatId, item: AssocItemId, subs: Substitution) {
+        <span class="self">self</span>.result.assoc_resolutions.insert(id, (item, subs));
+    }
+
+    <span class="kw">fn </span>write_pat_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pat: PatId, ty: Ty) {
+        <span class="self">self</span>.result.type_of_pat.insert(pat, ty);
+    }
+
+    <span class="kw">fn </span>push_diagnostic(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diagnostic: InferenceDiagnostic) {
+        <span class="self">self</span>.result.diagnostics.push(diagnostic);
+    }
+
+    <span class="kw">fn </span>make_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, type_ref: <span class="kw-2">&amp;</span>TypeRef) -&gt; Ty {
+        <span class="comment">// FIXME use right resolver for block
+        </span><span class="kw">let </span>ctx = <span class="kw">crate</span>::lower::TyLoweringContext::new(<span class="self">self</span>.db, <span class="kw-2">&amp;</span><span class="self">self</span>.resolver);
+        <span class="kw">let </span>ty = ctx.lower_ty(type_ref);
+        <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty);
+        <span class="self">self</span>.normalize_associated_types_in(ty)
+    }
+
+    <span class="kw">fn </span>err_ty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Ty {
+        <span class="self">self</span>.result.standard_types.unknown.clone()
+    }
+
+    <span class="doccomment">/// Replaces ConstScalar::Unknown by a new type var, so we can maybe still infer it.
+    </span><span class="kw">fn </span>insert_const_vars_shallow(<span class="kw-2">&amp;mut </span><span class="self">self</span>, c: Const) -&gt; Const {
+        <span class="kw">let </span>data = c.data(Interner);
+        <span class="kw">match </span>data.value {
+            ConstValue::Concrete(cc) =&gt; <span class="kw">match </span>cc.interned {
+                hir_def::type_ref::ConstScalar::Unknown =&gt; {
+                    <span class="self">self</span>.table.new_const_var(data.ty.clone())
+                }
+                <span class="kw">_ </span>=&gt; c,
+            },
+            <span class="kw">_ </span>=&gt; c,
+        }
+    }
+
+    <span class="doccomment">/// Replaces `Ty::Error` by a new type var, so we can maybe still infer it.
+    </span><span class="kw">fn </span>insert_type_vars_shallow(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: Ty) -&gt; Ty {
+        <span class="kw">match </span>ty.kind(Interner) {
+            TyKind::Error =&gt; <span class="self">self</span>.table.new_type_var(),
+            TyKind::InferenceVar(..) =&gt; {
+                <span class="kw">let </span>ty_resolved = <span class="self">self</span>.resolve_ty_shallow(<span class="kw-2">&amp;</span>ty);
+                <span class="kw">if </span>ty_resolved.is_unknown() {
+                    <span class="self">self</span>.table.new_type_var()
+                } <span class="kw">else </span>{
+                    ty
+                }
+            }
+            <span class="kw">_ </span>=&gt; ty,
+        }
+    }
+
+    <span class="kw">fn </span>insert_type_vars(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: Ty) -&gt; Ty {
+        fold_tys_and_consts(
+            ty,
+            |x, <span class="kw">_</span>| <span class="kw">match </span>x {
+                Either::Left(ty) =&gt; Either::Left(<span class="self">self</span>.insert_type_vars_shallow(ty)),
+                Either::Right(c) =&gt; Either::Right(<span class="self">self</span>.insert_const_vars_shallow(c)),
+            },
+            DebruijnIndex::INNERMOST,
+        )
+    }
+
+    <span class="kw">fn </span>push_obligation(<span class="kw-2">&amp;mut </span><span class="self">self</span>, o: DomainGoal) {
+        <span class="self">self</span>.table.register_obligation(o.cast(Interner));
+    }
+
+    <span class="kw">fn </span>unify(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty1: <span class="kw-2">&amp;</span>Ty, ty2: <span class="kw-2">&amp;</span>Ty) -&gt; bool {
+        <span class="self">self</span>.table.unify(ty1, ty2)
+    }
+
+    <span class="doccomment">/// Recurses through the given type, normalizing associated types mentioned
+    /// in it by replacing them by type variables and registering obligations to
+    /// resolve later. This should be done once for every type we get from some
+    /// type annotation (e.g. from a let type annotation, field type or function
+    /// call). `make_ty` handles this already, but e.g. for field types we need
+    /// to do it as well.
+    </span><span class="kw">fn </span>normalize_associated_types_in(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: Ty) -&gt; Ty {
+        <span class="self">self</span>.table.normalize_associated_types_in(ty)
+    }
+
+    <span class="kw">fn </span>resolve_ty_shallow(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: <span class="kw-2">&amp;</span>Ty) -&gt; Ty {
+        <span class="self">self</span>.table.resolve_ty_shallow(ty)
+    }
+
+    <span class="kw">fn </span>resolve_associated_type(<span class="kw-2">&amp;mut </span><span class="self">self</span>, inner_ty: Ty, assoc_ty: <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt;) -&gt; Ty {
+        <span class="self">self</span>.resolve_associated_type_with_params(inner_ty, assoc_ty, <span class="kw-2">&amp;</span>[])
+    }
+
+    <span class="kw">fn </span>resolve_associated_type_with_params(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        inner_ty: Ty,
+        assoc_ty: <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt;,
+        <span class="comment">// FIXME(GATs): these are args for the trait ref, args for assoc type itself should be
+        // handled when we support them.
+        </span>params: <span class="kw-2">&amp;</span>[GenericArg],
+    ) -&gt; Ty {
+        <span class="kw">match </span>assoc_ty {
+            <span class="prelude-val">Some</span>(res_assoc_ty) =&gt; {
+                <span class="kw">let </span>trait_ = <span class="kw">match </span>res_assoc_ty.lookup(<span class="self">self</span>.db.upcast()).container {
+                    hir_def::ItemContainerId::TraitId(trait_) =&gt; trait_,
+                    <span class="kw">_ </span>=&gt; <span class="macro">panic!</span>(<span class="string">&quot;resolve_associated_type called with non-associated type&quot;</span>),
+                };
+                <span class="kw">let </span>ty = <span class="self">self</span>.table.new_type_var();
+                <span class="kw">let </span><span class="kw-2">mut </span>param_iter = params.iter().cloned();
+                <span class="kw">let </span>trait_ref = TyBuilder::trait_ref(<span class="self">self</span>.db, trait_)
+                    .push(inner_ty)
+                    .fill(|<span class="kw">_</span>| param_iter.next().unwrap())
+                    .build();
+                <span class="kw">let </span>alias_eq = AliasEq {
+                    alias: AliasTy::Projection(ProjectionTy {
+                        associated_ty_id: to_assoc_type_id(res_assoc_ty),
+                        substitution: trait_ref.substitution.clone(),
+                    }),
+                    ty: ty.clone(),
+                };
+                <span class="self">self</span>.push_obligation(trait_ref.cast(Interner));
+                <span class="self">self</span>.push_obligation(alias_eq.cast(Interner));
+                ty
+            }
+            <span class="prelude-val">None </span>=&gt; <span class="self">self</span>.err_ty(),
+        }
+    }
+
+    <span class="kw">fn </span>resolve_variant(<span class="kw-2">&amp;mut </span><span class="self">self</span>, path: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Path&gt;, value_ns: bool) -&gt; (Ty, <span class="prelude-ty">Option</span>&lt;VariantId&gt;) {
+        <span class="kw">let </span>path = <span class="kw">match </span>path {
+            <span class="prelude-val">Some</span>(path) =&gt; path,
+            <span class="prelude-val">None </span>=&gt; <span class="kw">return </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>),
+        };
+        <span class="kw">let </span>resolver = <span class="kw-2">&amp;</span><span class="self">self</span>.resolver;
+        <span class="kw">let </span>ctx = <span class="kw">crate</span>::lower::TyLoweringContext::new(<span class="self">self</span>.db, <span class="kw-2">&amp;</span><span class="self">self</span>.resolver);
+        <span class="comment">// FIXME: this should resolve assoc items as well, see this example:
+        // https://play.rust-lang.org/?gist=087992e9e22495446c01c0d4e2d69521
+        </span><span class="kw">let </span>(resolution, unresolved) = <span class="kw">if </span>value_ns {
+            <span class="kw">match </span>resolver.resolve_path_in_value_ns(<span class="self">self</span>.db.upcast(), path.mod_path()) {
+                <span class="prelude-val">Some</span>(ResolveValueResult::ValueNs(value)) =&gt; <span class="kw">match </span>value {
+                    ValueNs::EnumVariantId(var) =&gt; {
+                        <span class="kw">let </span>substs = ctx.substs_from_path(path, var.into(), <span class="bool-val">true</span>);
+                        <span class="kw">let </span>ty = <span class="self">self</span>.db.ty(var.parent.into());
+                        <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty.substitute(Interner, <span class="kw-2">&amp;</span>substs));
+                        <span class="kw">return </span>(ty, <span class="prelude-val">Some</span>(var.into()));
+                    }
+                    ValueNs::StructId(strukt) =&gt; {
+                        <span class="kw">let </span>substs = ctx.substs_from_path(path, strukt.into(), <span class="bool-val">true</span>);
+                        <span class="kw">let </span>ty = <span class="self">self</span>.db.ty(strukt.into());
+                        <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty.substitute(Interner, <span class="kw-2">&amp;</span>substs));
+                        <span class="kw">return </span>(ty, <span class="prelude-val">Some</span>(strukt.into()));
+                    }
+                    ValueNs::ImplSelf(impl_id) =&gt; (TypeNs::SelfType(impl_id), <span class="prelude-val">None</span>),
+                    <span class="kw">_ </span>=&gt; <span class="kw">return </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>),
+                },
+                <span class="prelude-val">Some</span>(ResolveValueResult::Partial(typens, unresolved)) =&gt; (typens, <span class="prelude-val">Some</span>(unresolved)),
+                <span class="prelude-val">None </span>=&gt; <span class="kw">return </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>),
+            }
+        } <span class="kw">else </span>{
+            <span class="kw">match </span>resolver.resolve_path_in_type_ns(<span class="self">self</span>.db.upcast(), path.mod_path()) {
+                <span class="prelude-val">Some</span>(it) =&gt; it,
+                <span class="prelude-val">None </span>=&gt; <span class="kw">return </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>),
+            }
+        };
+        <span class="kw">return match </span>resolution {
+            TypeNs::AdtId(AdtId::StructId(strukt)) =&gt; {
+                <span class="kw">let </span>substs = ctx.substs_from_path(path, strukt.into(), <span class="bool-val">true</span>);
+                <span class="kw">let </span>ty = <span class="self">self</span>.db.ty(strukt.into());
+                <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty.substitute(Interner, <span class="kw-2">&amp;</span>substs));
+                forbid_unresolved_segments((ty, <span class="prelude-val">Some</span>(strukt.into())), unresolved)
+            }
+            TypeNs::AdtId(AdtId::UnionId(u)) =&gt; {
+                <span class="kw">let </span>substs = ctx.substs_from_path(path, u.into(), <span class="bool-val">true</span>);
+                <span class="kw">let </span>ty = <span class="self">self</span>.db.ty(u.into());
+                <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty.substitute(Interner, <span class="kw-2">&amp;</span>substs));
+                forbid_unresolved_segments((ty, <span class="prelude-val">Some</span>(u.into())), unresolved)
+            }
+            TypeNs::EnumVariantId(var) =&gt; {
+                <span class="kw">let </span>substs = ctx.substs_from_path(path, var.into(), <span class="bool-val">true</span>);
+                <span class="kw">let </span>ty = <span class="self">self</span>.db.ty(var.parent.into());
+                <span class="kw">let </span>ty = <span class="self">self</span>.insert_type_vars(ty.substitute(Interner, <span class="kw-2">&amp;</span>substs));
+                forbid_unresolved_segments((ty, <span class="prelude-val">Some</span>(var.into())), unresolved)
+            }
+            TypeNs::SelfType(impl_id) =&gt; {
+                <span class="kw">let </span>generics = <span class="kw">crate</span>::utils::generics(<span class="self">self</span>.db.upcast(), impl_id.into());
+                <span class="kw">let </span>substs = generics.placeholder_subst(<span class="self">self</span>.db);
+                <span class="kw">let </span>ty = <span class="self">self</span>.db.impl_self_ty(impl_id).substitute(Interner, <span class="kw-2">&amp;</span>substs);
+                <span class="self">self</span>.resolve_variant_on_alias(ty, unresolved, path)
+            }
+            TypeNs::TypeAliasId(it) =&gt; {
+                <span class="kw">let </span>container = it.lookup(<span class="self">self</span>.db.upcast()).container;
+                <span class="kw">let </span>parent_subst = <span class="kw">match </span>container {
+                    ItemContainerId::TraitId(id) =&gt; {
+                        <span class="kw">let </span>subst = TyBuilder::subst_for_def(<span class="self">self</span>.db, id, <span class="prelude-val">None</span>)
+                            .fill_with_inference_vars(<span class="kw-2">&amp;mut </span><span class="self">self</span>.table)
+                            .build();
+                        <span class="prelude-val">Some</span>(subst)
+                    }
+                    <span class="comment">// Type aliases do not exist in impls.
+                    </span><span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+                };
+                <span class="kw">let </span>ty = TyBuilder::def_ty(<span class="self">self</span>.db, it.into(), parent_subst)
+                    .fill_with_inference_vars(<span class="kw-2">&amp;mut </span><span class="self">self</span>.table)
+                    .build();
+                <span class="self">self</span>.resolve_variant_on_alias(ty, unresolved, path)
+            }
+            TypeNs::AdtSelfType(<span class="kw">_</span>) =&gt; {
+                <span class="comment">// FIXME this could happen in array size expressions, once we&#39;re checking them
+                </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>)
+            }
+            TypeNs::GenericParam(<span class="kw">_</span>) =&gt; {
+                <span class="comment">// FIXME potentially resolve assoc type
+                </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>)
+            }
+            TypeNs::AdtId(AdtId::EnumId(<span class="kw">_</span>)) | TypeNs::BuiltinType(<span class="kw">_</span>) | TypeNs::TraitId(<span class="kw">_</span>) =&gt; {
+                <span class="comment">// FIXME diagnostic
+                </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>)
+            }
+        };
+
+        <span class="kw">fn </span>forbid_unresolved_segments(
+            result: (Ty, <span class="prelude-ty">Option</span>&lt;VariantId&gt;),
+            unresolved: <span class="prelude-ty">Option</span>&lt;usize&gt;,
+        ) -&gt; (Ty, <span class="prelude-ty">Option</span>&lt;VariantId&gt;) {
+            <span class="kw">if </span>unresolved.is_none() {
+                result
+            } <span class="kw">else </span>{
+                <span class="comment">// FIXME diagnostic
+                </span>(TyKind::Error.intern(Interner), <span class="prelude-val">None</span>)
+            }
+        }
+    }
+
+    <span class="kw">fn </span>resolve_variant_on_alias(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        ty: Ty,
+        unresolved: <span class="prelude-ty">Option</span>&lt;usize&gt;,
+        path: <span class="kw-2">&amp;</span>Path,
+    ) -&gt; (Ty, <span class="prelude-ty">Option</span>&lt;VariantId&gt;) {
+        <span class="kw">let </span>remaining = unresolved.map(|x| path.segments().skip(x).len()).filter(|x| x &gt; <span class="kw-2">&amp;</span><span class="number">0</span>);
+        <span class="kw">match </span>remaining {
+            <span class="prelude-val">None </span>=&gt; {
+                <span class="kw">let </span>variant = ty.as_adt().and_then(|(adt_id, <span class="kw">_</span>)| <span class="kw">match </span>adt_id {
+                    AdtId::StructId(s) =&gt; <span class="prelude-val">Some</span>(VariantId::StructId(s)),
+                    AdtId::UnionId(u) =&gt; <span class="prelude-val">Some</span>(VariantId::UnionId(u)),
+                    AdtId::EnumId(<span class="kw">_</span>) =&gt; {
+                        <span class="comment">// FIXME Error E0071, expected struct, variant or union type, found enum `Foo`
+                        </span><span class="prelude-val">None
+                    </span>}
+                });
+                (ty, variant)
+            }
+            <span class="prelude-val">Some</span>(<span class="number">1</span>) =&gt; {
+                <span class="kw">let </span>segment = path.mod_path().segments().last().unwrap();
+                <span class="comment">// this could be an enum variant or associated type
+                </span><span class="kw">if let </span><span class="prelude-val">Some</span>((AdtId::EnumId(enum_id), <span class="kw">_</span>)) = ty.as_adt() {
+                    <span class="kw">let </span>enum_data = <span class="self">self</span>.db.enum_data(enum_id);
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(local_id) = enum_data.variant(segment) {
+                        <span class="kw">let </span>variant = EnumVariantId { parent: enum_id, local_id };
+                        <span class="kw">return </span>(ty, <span class="prelude-val">Some</span>(variant.into()));
+                    }
+                }
+                <span class="comment">// FIXME potentially resolve assoc type
+                </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>)
+            }
+            <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; {
+                <span class="comment">// FIXME diagnostic
+                </span>(<span class="self">self</span>.err_ty(), <span class="prelude-val">None</span>)
+            }
+        }
+    }
+
+    <span class="kw">fn </span>resolve_lang_item(<span class="kw-2">&amp;</span><span class="self">self</span>, name: Name) -&gt; <span class="prelude-ty">Option</span>&lt;LangItemTarget&gt; {
+        <span class="kw">let </span>krate = <span class="self">self</span>.resolver.krate();
+        <span class="self">self</span>.db.lang_item(krate, name.to_smol_str())
+    }
+
+    <span class="kw">fn </span>resolve_into_iter_item(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::iter::IntoIterator];
+        <span class="kw">let </span>trait_ = <span class="self">self</span>.resolver.resolve_known_trait(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="self">self</span>.db.trait_data(trait_).associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[IntoIter])
+    }
+
+    <span class="kw">fn </span>resolve_iterator_item(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::iter::Iterator];
+        <span class="kw">let </span>trait_ = <span class="self">self</span>.resolver.resolve_known_trait(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="self">self</span>.db.trait_data(trait_).associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[Item])
+    }
+
+    <span class="kw">fn </span>resolve_ops_try_ok(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="comment">// FIXME resolve via lang_item once try v2 is stable
+        </span><span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::Try];
+        <span class="kw">let </span>trait_ = <span class="self">self</span>.resolver.resolve_known_trait(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="kw">let </span>trait_data = <span class="self">self</span>.db.trait_data(trait_);
+        trait_data
+            <span class="comment">// FIXME remove once try v2 is stable
+            </span>.associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[<span class="prelude-val">Ok</span>])
+            .or_else(|| trait_data.associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[Output]))
+    }
+
+    <span class="kw">fn </span>resolve_ops_neg_output(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="kw">let </span>trait_ = <span class="self">self</span>.resolve_lang_item(<span class="macro">name!</span>[neg])<span class="question-mark">?</span>.as_trait()<span class="question-mark">?</span>;
+        <span class="self">self</span>.db.trait_data(trait_).associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[Output])
+    }
+
+    <span class="kw">fn </span>resolve_ops_not_output(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="kw">let </span>trait_ = <span class="self">self</span>.resolve_lang_item(<span class="macro">name!</span>[not])<span class="question-mark">?</span>.as_trait()<span class="question-mark">?</span>;
+        <span class="self">self</span>.db.trait_data(trait_).associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[Output])
+    }
+
+    <span class="kw">fn </span>resolve_future_future_output(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="kw">let </span>trait_ = <span class="self">self
+            </span>.resolver
+            .resolve_known_trait(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span><span class="macro">path!</span>[core::future::IntoFuture])
+            .or_else(|| <span class="self">self</span>.resolve_lang_item(<span class="macro">name!</span>[future_trait])<span class="question-mark">?</span>.as_trait())<span class="question-mark">?</span>;
+        <span class="self">self</span>.db.trait_data(trait_).associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[Output])
+    }
+
+    <span class="kw">fn </span>resolve_boxed_box(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolve_lang_item(<span class="macro">name!</span>[owned_box])<span class="question-mark">?</span>.as_struct()<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_range_full(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::RangeFull];
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolver.resolve_known_struct(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_range(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::Range];
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolver.resolve_known_struct(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_range_inclusive(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::RangeInclusive];
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolver.resolve_known_struct(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_range_from(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::RangeFrom];
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolver.resolve_known_struct(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_range_to(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::RangeTo];
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolver.resolve_known_struct(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_range_to_inclusive(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>path = <span class="macro">path!</span>[core::ops::RangeToInclusive];
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolver.resolve_known_struct(<span class="self">self</span>.db.upcast(), <span class="kw-2">&amp;</span>path)<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+
+    <span class="kw">fn </span>resolve_ops_index(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TraitId&gt; {
+        <span class="self">self</span>.resolve_lang_item(<span class="macro">name!</span>[index])<span class="question-mark">?</span>.as_trait()
+    }
+
+    <span class="kw">fn </span>resolve_ops_index_output(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TypeAliasId&gt; {
+        <span class="kw">let </span>trait_ = <span class="self">self</span>.resolve_ops_index()<span class="question-mark">?</span>;
+        <span class="self">self</span>.db.trait_data(trait_).associated_type_by_name(<span class="kw-2">&amp;</span><span class="macro">name!</span>[Output])
+    }
+
+    <span class="kw">fn </span>resolve_va_list(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;AdtId&gt; {
+        <span class="kw">let </span>struct_ = <span class="self">self</span>.resolve_lang_item(<span class="macro">name!</span>[va_list])<span class="question-mark">?</span>.as_struct()<span class="question-mark">?</span>;
+        <span class="prelude-val">Some</span>(struct_.into())
+    }
+}
+
+<span class="doccomment">/// When inferring an expression, we propagate downward whatever type hint we
+/// are able in the form of an `Expectation`.
+</span><span class="attribute">#[derive(Clone, PartialEq, Eq, Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>Expectation {
+    <span class="prelude-val">None</span>,
+    HasType(Ty),
+    <span class="comment">// Castable(Ty), // rustc has this, we currently just don&#39;t propagate an expectation for casts
+    </span>RValueLikeUnsized(Ty),
+}
+
+<span class="kw">impl </span>Expectation {
+    <span class="doccomment">/// The expectation that the type of the expression needs to equal the given
+    /// type.
+    </span><span class="kw">fn </span>has_type(ty: Ty) -&gt; <span class="self">Self </span>{
+        <span class="kw">if </span>ty.is_unknown() {
+            <span class="comment">// FIXME: get rid of this?
+            </span>Expectation::None
+        } <span class="kw">else </span>{
+            Expectation::HasType(ty)
+        }
+    }
+
+    <span class="kw">fn </span>from_option(ty: <span class="prelude-ty">Option</span>&lt;Ty&gt;) -&gt; <span class="self">Self </span>{
+        ty.map_or(Expectation::None, Expectation::HasType)
+    }
+
+    <span class="doccomment">/// The following explanation is copied straight from rustc:
+    /// Provides an expectation for an rvalue expression given an *optional*
+    /// hint, which is not required for type safety (the resulting type might
+    /// be checked higher up, as is the case with `&amp;expr` and `box expr`), but
+    /// is useful in determining the concrete type.
+    ///
+    /// The primary use case is where the expected type is a fat pointer,
+    /// like `&amp;[isize]`. For example, consider the following statement:
+    ///
+    ///     let x: &amp;[isize] = &amp;[1, 2, 3];
+    ///
+    /// In this case, the expected type for the `&amp;[1, 2, 3]` expression is
+    /// `&amp;[isize]`. If however we were to say that `[1, 2, 3]` has the
+    /// expectation `ExpectHasType([isize])`, that would be too strong --
+    /// `[1, 2, 3]` does not have the type `[isize]` but rather `[isize; 3]`.
+    /// It is only the `&amp;[1, 2, 3]` expression as a whole that can be coerced
+    /// to the type `&amp;[isize]`. Therefore, we propagate this more limited hint,
+    /// which still is useful, because it informs integer literals and the like.
+    /// See the test case `test/ui/coerce-expect-unsized.rs` and #20169
+    /// for examples of where this comes up,.
+    </span><span class="kw">fn </span>rvalue_hint(table: <span class="kw-2">&amp;mut </span>unify::InferenceTable&lt;<span class="lifetime">&#39;_</span>&gt;, ty: Ty) -&gt; <span class="self">Self </span>{
+        <span class="comment">// FIXME: do struct_tail_without_normalization
+        </span><span class="kw">match </span>table.resolve_ty_shallow(<span class="kw-2">&amp;</span>ty).kind(Interner) {
+            TyKind::Slice(<span class="kw">_</span>) | TyKind::Str | TyKind::Dyn(<span class="kw">_</span>) =&gt; Expectation::RValueLikeUnsized(ty),
+            <span class="kw">_ </span>=&gt; Expectation::has_type(ty),
+        }
+    }
+
+    <span class="doccomment">/// This expresses no expectation on the type.
+    </span><span class="kw">fn </span>none() -&gt; <span class="self">Self </span>{
+        Expectation::None
+    }
+
+    <span class="kw">fn </span>resolve(<span class="kw-2">&amp;</span><span class="self">self</span>, table: <span class="kw-2">&amp;mut </span>unify::InferenceTable&lt;<span class="lifetime">&#39;_</span>&gt;) -&gt; Expectation {
+        <span class="kw">match </span><span class="self">self </span>{
+            Expectation::None =&gt; Expectation::None,
+            Expectation::HasType(t) =&gt; Expectation::HasType(table.resolve_ty_shallow(t)),
+            Expectation::RValueLikeUnsized(t) =&gt; {
+                Expectation::RValueLikeUnsized(table.resolve_ty_shallow(t))
+            }
+        }
+    }
+
+    <span class="kw">fn </span>to_option(<span class="kw-2">&amp;</span><span class="self">self</span>, table: <span class="kw-2">&amp;mut </span>unify::InferenceTable&lt;<span class="lifetime">&#39;_</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;Ty&gt; {
+        <span class="kw">match </span><span class="self">self</span>.resolve(table) {
+            Expectation::None =&gt; <span class="prelude-val">None</span>,
+            Expectation::HasType(t) |
+            <span class="comment">// Expectation::Castable(t) |
+            </span>Expectation::RValueLikeUnsized(t) =&gt; <span class="prelude-val">Some</span>(t),
+        }
+    }
+
+    <span class="kw">fn </span>only_has_type(<span class="kw-2">&amp;</span><span class="self">self</span>, table: <span class="kw-2">&amp;mut </span>unify::InferenceTable&lt;<span class="lifetime">&#39;_</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;Ty&gt; {
+        <span class="kw">match </span><span class="self">self </span>{
+            Expectation::HasType(t) =&gt; <span class="prelude-val">Some</span>(table.resolve_ty_shallow(t)),
+            <span class="comment">// Expectation::Castable(_) |
+            </span>Expectation::RValueLikeUnsized(<span class="kw">_</span>) | Expectation::None =&gt; <span class="prelude-val">None</span>,
+        }
+    }
+
+    <span class="doccomment">/// Comment copied from rustc:
+    /// Disregard &quot;castable to&quot; expectations because they
+    /// can lead us astray. Consider for example `if cond
+    /// {22} else {c} as u8` -- if we propagate the
+    /// &quot;castable to u8&quot; constraint to 22, it will pick the
+    /// type 22u8, which is overly constrained (c might not
+    /// be a u8). In effect, the problem is that the
+    /// &quot;castable to&quot; expectation is not the tightest thing
+    /// we can say, so we want to drop it in this case.
+    /// The tightest thing we can say is &quot;must unify with
+    /// else branch&quot;. Note that in the case of a &quot;has type&quot;
+    /// constraint, this limitation does not hold.
+    ///
+    /// If the expected type is just a type variable, then don&#39;t use
+    /// an expected type. Otherwise, we might write parts of the type
+    /// when checking the &#39;then&#39; block which are incompatible with the
+    /// &#39;else&#39; branch.
+    </span><span class="kw">fn </span>adjust_for_branches(<span class="kw-2">&amp;</span><span class="self">self</span>, table: <span class="kw-2">&amp;mut </span>unify::InferenceTable&lt;<span class="lifetime">&#39;_</span>&gt;) -&gt; Expectation {
+        <span class="kw">match </span><span class="self">self </span>{
+            Expectation::HasType(ety) =&gt; {
+                <span class="kw">let </span>ety = table.resolve_ty_shallow(ety);
+                <span class="kw">if </span>!ety.is_ty_var() {
+                    Expectation::HasType(ety)
+                } <span class="kw">else </span>{
+                    Expectation::None
+                }
+            }
+            Expectation::RValueLikeUnsized(ety) =&gt; Expectation::RValueLikeUnsized(ety.clone()),
+            <span class="kw">_ </span>=&gt; Expectation::None,
+        }
+    }
+}
+
+<span class="attribute">#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+</span><span class="kw">enum </span>Diverges {
+    Maybe,
+    Always,
+}
+
+<span class="kw">impl </span>Diverges {
+    <span class="kw">fn </span>is_always(<span class="self">self</span>) -&gt; bool {
+        <span class="self">self </span>== Diverges::Always
+    }
+}
+
+<span class="kw">impl </span>std::ops::BitAnd <span class="kw">for </span>Diverges {
+    <span class="kw">type </span>Output = <span class="self">Self</span>;
+    <span class="kw">fn </span>bitand(<span class="self">self</span>, other: <span class="self">Self</span>) -&gt; <span class="self">Self </span>{
+        std::cmp::min(<span class="self">self</span>, other)
+    }
+}
+
+<span class="kw">impl </span>std::ops::BitOr <span class="kw">for </span>Diverges {
+    <span class="kw">type </span>Output = <span class="self">Self</span>;
+    <span class="kw">fn </span>bitor(<span class="self">self</span>, other: <span class="self">Self</span>) -&gt; <span class="self">Self </span>{
+        std::cmp::max(<span class="self">self</span>, other)
+    }
+}
+
+<span class="kw">impl </span>std::ops::BitAndAssign <span class="kw">for </span>Diverges {
+    <span class="kw">fn </span>bitand_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="self">Self</span>) {
+        <span class="kw-2">*</span><span class="self">self </span>= <span class="kw-2">*</span><span class="self">self </span>&amp; other;
+    }
+}
+
+<span class="kw">impl </span>std::ops::BitOrAssign <span class="kw">for </span>Diverges {
+    <span class="kw">fn </span>bitor_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, other: <span class="self">Self</span>) {
+        <span class="kw-2">*</span><span class="self">self </span>= <span class="kw-2">*</span><span class="self">self </span>| other;
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="hir_ty" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>

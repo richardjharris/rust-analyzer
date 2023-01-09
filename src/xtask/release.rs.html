@@ -1,0 +1,194 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `xtask/src/release.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>release.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../xtask/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+</pre><pre class="rust"><code><span class="kw">mod </span>changelog;
+
+<span class="kw">use </span>xshell::{cmd, Shell};
+
+<span class="kw">use crate</span>::{date_iso, flags, is_release_tag, project_root};
+
+<span class="kw">impl </span>flags::Release {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>run(<span class="self">self</span>, sh: <span class="kw-2">&amp;</span>Shell) -&gt; anyhow::Result&lt;()&gt; {
+        <span class="kw">if </span>!<span class="self">self</span>.dry_run {
+            <span class="macro">cmd!</span>(sh, <span class="string">&quot;git switch release&quot;</span>).run()<span class="question-mark">?</span>;
+            <span class="macro">cmd!</span>(sh, <span class="string">&quot;git fetch upstream --tags --force&quot;</span>).run()<span class="question-mark">?</span>;
+            <span class="macro">cmd!</span>(sh, <span class="string">&quot;git reset --hard tags/nightly&quot;</span>).run()<span class="question-mark">?</span>;
+            <span class="comment">// The `release` branch sometimes has a couple of cherry-picked
+            // commits for patch releases. If that&#39;s the case, just overwrite
+            // it. As we are setting `release` branch to an up-to-date `nightly`
+            // tag, this shouldn&#39;t be problematic in general.
+            //
+            // Note that, as we tag releases, we don&#39;t worry about &quot;losing&quot;
+            // commits -- they&#39;ll be kept alive by the tag. More generally, we
+            // don&#39;t care about historic releases all that much, it&#39;s fine even
+            // to delete old tags.
+            </span><span class="macro">cmd!</span>(sh, <span class="string">&quot;git push --force&quot;</span>).run()<span class="question-mark">?</span>;
+        }
+
+        <span class="comment">// Generates bits of manual.adoc.
+        </span><span class="macro">cmd!</span>(sh, <span class="string">&quot;cargo test -p ide-assists -p ide-diagnostics -p rust-analyzer -- sourcegen_&quot;</span>)
+            .run()<span class="question-mark">?</span>;
+
+        <span class="kw">let </span>website_root = project_root().join(<span class="string">&quot;../rust-analyzer.github.io&quot;</span>);
+        {
+            <span class="kw">let </span>_dir = sh.push_dir(<span class="kw-2">&amp;</span>website_root);
+            <span class="macro">cmd!</span>(sh, <span class="string">&quot;git switch src&quot;</span>).run()<span class="question-mark">?</span>;
+            <span class="macro">cmd!</span>(sh, <span class="string">&quot;git pull&quot;</span>).run()<span class="question-mark">?</span>;
+        }
+        <span class="kw">let </span>changelog_dir = website_root.join(<span class="string">&quot;./thisweek/_posts&quot;</span>);
+
+        <span class="kw">let </span>today = date_iso(sh)<span class="question-mark">?</span>;
+        <span class="kw">let </span>commit = <span class="macro">cmd!</span>(sh, <span class="string">&quot;git rev-parse HEAD&quot;</span>).read()<span class="question-mark">?</span>;
+        <span class="kw">let </span>changelog_n = sh
+            .read_dir(changelog_dir.as_path())<span class="question-mark">?
+            </span>.into_iter()
+            .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()))
+            .filter_map(|s| s.splitn(<span class="number">5</span>, <span class="string">&#39;-&#39;</span>).last().map(|n| n.replace(<span class="string">&#39;-&#39;</span>, <span class="string">&quot;.&quot;</span>)))
+            .filter_map(|s| s.parse::&lt;f32&gt;().ok())
+            .map(|n| <span class="number">1 </span>+ n.floor() <span class="kw">as </span>usize)
+            .max()
+            .unwrap_or_default();
+
+        <span class="kw">for </span>adoc <span class="kw">in </span>[
+            <span class="string">&quot;manual.adoc&quot;</span>,
+            <span class="string">&quot;generated_assists.adoc&quot;</span>,
+            <span class="string">&quot;generated_config.adoc&quot;</span>,
+            <span class="string">&quot;generated_diagnostic.adoc&quot;</span>,
+            <span class="string">&quot;generated_features.adoc&quot;</span>,
+        ] {
+            <span class="kw">let </span>src = project_root().join(<span class="string">&quot;./docs/user/&quot;</span>).join(adoc);
+            <span class="kw">let </span>dst = website_root.join(adoc);
+
+            <span class="kw">let </span>contents = sh.read_file(src)<span class="question-mark">?</span>;
+            sh.write_file(dst, contents)<span class="question-mark">?</span>;
+        }
+
+        <span class="kw">let </span>tags = <span class="macro">cmd!</span>(sh, <span class="string">&quot;git tag --list&quot;</span>).read()<span class="question-mark">?</span>;
+        <span class="kw">let </span>prev_tag = tags.lines().filter(|line| is_release_tag(line)).last().unwrap();
+
+        <span class="kw">let </span>contents = changelog::get_changelog(sh, changelog_n, <span class="kw-2">&amp;</span>commit, prev_tag, <span class="kw-2">&amp;</span>today)<span class="question-mark">?</span>;
+        <span class="kw">let </span>path = changelog_dir.join(<span class="macro">format!</span>(<span class="string">&quot;{today}-changelog-{changelog_n}.adoc&quot;</span>));
+        sh.write_file(path, contents)<span class="question-mark">?</span>;
+
+        <span class="prelude-val">Ok</span>(())
+    }
+}
+
+<span class="kw">impl </span>flags::Promote {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>run(<span class="self">self</span>, sh: <span class="kw-2">&amp;</span>Shell) -&gt; anyhow::Result&lt;()&gt; {
+        <span class="kw">let </span>_dir = sh.push_dir(<span class="string">&quot;../rust-rust-analyzer&quot;</span>);
+        <span class="macro">cmd!</span>(sh, <span class="string">&quot;git switch master&quot;</span>).run()<span class="question-mark">?</span>;
+        <span class="macro">cmd!</span>(sh, <span class="string">&quot;git fetch upstream&quot;</span>).run()<span class="question-mark">?</span>;
+        <span class="macro">cmd!</span>(sh, <span class="string">&quot;git reset --hard upstream/master&quot;</span>).run()<span class="question-mark">?</span>;
+
+        <span class="kw">let </span>date = date_iso(sh)<span class="question-mark">?</span>;
+        <span class="kw">let </span>branch = <span class="macro">format!</span>(<span class="string">&quot;rust-analyzer-{date}&quot;</span>);
+        <span class="macro">cmd!</span>(sh, <span class="string">&quot;git switch -c {branch}&quot;</span>).run()<span class="question-mark">?</span>;
+        <span class="macro">cmd!</span>(sh, <span class="string">&quot;git subtree pull -m &#39;:arrow_up: rust-analyzer&#39; -P src/tools/rust-analyzer rust-analyzer release&quot;</span>).run()<span class="question-mark">?</span>;
+
+        <span class="kw">if </span>!<span class="self">self</span>.dry_run {
+            <span class="macro">cmd!</span>(sh, <span class="string">&quot;git push -u origin {branch}&quot;</span>).run()<span class="question-mark">?</span>;
+            <span class="macro">cmd!</span>(
+                sh,
+                <span class="string">&quot;xdg-open https://github.com/matklad/rust/pull/new/{branch}?body=r%3F%20%40ghost&quot;
+            </span>)
+            .run()<span class="question-mark">?</span>;
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>

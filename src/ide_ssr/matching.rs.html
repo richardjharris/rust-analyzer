@@ -1,0 +1,1610 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/ide-ssr/src/matching.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>matching.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" href="../../normalize.css"><link rel="stylesheet" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" href="../../ayu.css" disabled><link rel="stylesheet" href="../../dark.css" disabled><link rel="stylesheet" href="../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../storage.js"></script><script defer src="../../source-script.js"></script><script defer src="../../source-files.js"></script><script defer src="../../main.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"></nav><main><div class="width-limiter"><nav class="sub"><a class="sub-logo-container" href="../../ide_ssr/index.html"><img class="rust-logo" src="../../rust-logo.svg" alt="logo"></a><form class="search-form"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><a href="../../help.html">?</a></div><div id="settings-menu" tabindex="-1"><a href="../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main-content" class="content"><div class="example-wrap"><pre class="src-line-numbers"><span id="1">1</span>
+<span id="2">2</span>
+<span id="3">3</span>
+<span id="4">4</span>
+<span id="5">5</span>
+<span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
+<span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
+<span id="99">99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
+<span id="618">618</span>
+<span id="619">619</span>
+<span id="620">620</span>
+<span id="621">621</span>
+<span id="622">622</span>
+<span id="623">623</span>
+<span id="624">624</span>
+<span id="625">625</span>
+<span id="626">626</span>
+<span id="627">627</span>
+<span id="628">628</span>
+<span id="629">629</span>
+<span id="630">630</span>
+<span id="631">631</span>
+<span id="632">632</span>
+<span id="633">633</span>
+<span id="634">634</span>
+<span id="635">635</span>
+<span id="636">636</span>
+<span id="637">637</span>
+<span id="638">638</span>
+<span id="639">639</span>
+<span id="640">640</span>
+<span id="641">641</span>
+<span id="642">642</span>
+<span id="643">643</span>
+<span id="644">644</span>
+<span id="645">645</span>
+<span id="646">646</span>
+<span id="647">647</span>
+<span id="648">648</span>
+<span id="649">649</span>
+<span id="650">650</span>
+<span id="651">651</span>
+<span id="652">652</span>
+<span id="653">653</span>
+<span id="654">654</span>
+<span id="655">655</span>
+<span id="656">656</span>
+<span id="657">657</span>
+<span id="658">658</span>
+<span id="659">659</span>
+<span id="660">660</span>
+<span id="661">661</span>
+<span id="662">662</span>
+<span id="663">663</span>
+<span id="664">664</span>
+<span id="665">665</span>
+<span id="666">666</span>
+<span id="667">667</span>
+<span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
+<span id="674">674</span>
+<span id="675">675</span>
+<span id="676">676</span>
+<span id="677">677</span>
+<span id="678">678</span>
+<span id="679">679</span>
+<span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
+<span id="743">743</span>
+<span id="744">744</span>
+<span id="745">745</span>
+<span id="746">746</span>
+<span id="747">747</span>
+<span id="748">748</span>
+<span id="749">749</span>
+<span id="750">750</span>
+<span id="751">751</span>
+<span id="752">752</span>
+<span id="753">753</span>
+<span id="754">754</span>
+<span id="755">755</span>
+<span id="756">756</span>
+<span id="757">757</span>
+<span id="758">758</span>
+<span id="759">759</span>
+<span id="760">760</span>
+<span id="761">761</span>
+<span id="762">762</span>
+<span id="763">763</span>
+<span id="764">764</span>
+<span id="765">765</span>
+<span id="766">766</span>
+<span id="767">767</span>
+<span id="768">768</span>
+<span id="769">769</span>
+<span id="770">770</span>
+<span id="771">771</span>
+<span id="772">772</span>
+<span id="773">773</span>
+<span id="774">774</span>
+<span id="775">775</span>
+<span id="776">776</span>
+<span id="777">777</span>
+<span id="778">778</span>
+<span id="779">779</span>
+<span id="780">780</span>
+<span id="781">781</span>
+<span id="782">782</span>
+<span id="783">783</span>
+<span id="784">784</span>
+<span id="785">785</span>
+<span id="786">786</span>
+<span id="787">787</span>
+<span id="788">788</span>
+<span id="789">789</span>
+<span id="790">790</span>
+<span id="791">791</span>
+<span id="792">792</span>
+<span id="793">793</span>
+<span id="794">794</span>
+<span id="795">795</span>
+<span id="796">796</span>
+<span id="797">797</span>
+<span id="798">798</span>
+<span id="799">799</span>
+<span id="800">800</span>
+<span id="801">801</span>
+<span id="802">802</span>
+<span id="803">803</span>
+<span id="804">804</span>
+</pre><pre class="rust"><code><span class="doccomment">//! This module is responsible for matching a search pattern against a node in the AST. In the
+//! process of matching, placeholder values are recorded.
+
+</span><span class="kw">use crate</span>::{
+    parsing::{Constraint, NodeKind, Placeholder, Var},
+    resolving::{ResolvedPattern, ResolvedRule, UfcsCallInfo},
+    SsrMatches,
+};
+<span class="kw">use </span>hir::Semantics;
+<span class="kw">use </span>ide_db::{base_db::FileRange, FxHashMap};
+<span class="kw">use </span>std::{cell::Cell, iter::Peekable};
+<span class="kw">use </span>syntax::{
+    ast::{<span class="self">self</span>, AstNode, AstToken},
+    SmolStr, SyntaxElement, SyntaxElementChildren, SyntaxKind, SyntaxNode, SyntaxToken,
+};
+
+<span class="comment">// Creates a match error. If we&#39;re currently attempting to match some code that we thought we were
+// going to match, as indicated by the --debug-snippet flag, then populate the reason field.
+</span><span class="macro">macro_rules! </span>match_error {
+    (<span class="macro-nonterminal">$e</span>:expr) =&gt; {{
+            MatchFailed {
+                reason: <span class="kw">if </span>recording_match_fail_reasons() {
+                    <span class="prelude-val">Some</span>(<span class="macro">format!</span>(<span class="string">&quot;{}&quot;</span>, <span class="macro-nonterminal">$e</span>))
+                } <span class="kw">else </span>{
+                    <span class="prelude-val">None
+                </span>}
+            }
+    }};
+    (<span class="macro-nonterminal">$fmt</span>:expr, $(<span class="macro-nonterminal">$arg</span>:tt)+) =&gt; {{
+        MatchFailed {
+            reason: <span class="kw">if </span>recording_match_fail_reasons() {
+                <span class="prelude-val">Some</span>(<span class="macro">format!</span>(<span class="macro-nonterminal">$fmt</span>, $(<span class="macro-nonterminal">$arg</span>)+))
+            } <span class="kw">else </span>{
+                <span class="prelude-val">None
+            </span>}
+        }
+    }};
+}
+
+<span class="comment">// Fails the current match attempt, recording the supplied reason if we&#39;re recording match fail reasons.
+</span><span class="macro">macro_rules! </span>fail_match {
+    ($(<span class="macro-nonterminal">$args</span>:tt)<span class="kw-2">*</span>) =&gt; {<span class="kw">return </span><span class="prelude-val">Err</span>(<span class="macro">match_error!</span>($(<span class="macro-nonterminal">$args</span>)<span class="kw-2">*</span>))};
+}
+
+<span class="doccomment">/// Information about a match that was found.
+</span><span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub struct </span>Match {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) range: FileRange,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) matched_node: SyntaxNode,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) placeholder_values: FxHashMap&lt;Var, PlaceholderMatch&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) ignored_comments: Vec&lt;ast::Comment&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) rule_index: usize,
+    <span class="doccomment">/// The depth of matched_node.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) depth: usize,
+    <span class="comment">// Each path in the template rendered for the module in which the match was found.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) rendered_template_paths: FxHashMap&lt;SyntaxNode, hir::ModPath&gt;,
+}
+
+<span class="doccomment">/// Information about a placeholder bound in a match.
+</span><span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>PlaceholderMatch {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) range: FileRange,
+    <span class="doccomment">/// More matches, found within `node`.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) inner_matches: SsrMatches,
+    <span class="doccomment">/// How many times the code that the placeholder matched needed to be dereferenced. Will only be
+    /// non-zero if the placeholder matched to the receiver of a method call.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) autoderef_count: usize,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) autoref_kind: ast::SelfParamKind,
+}
+
+<span class="attribute">#[derive(Debug)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>MatchFailureReason {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) reason: String,
+}
+
+<span class="doccomment">/// An &quot;error&quot; indicating that matching failed. Use the fail_match! macro to create and return this.
+</span><span class="attribute">#[derive(Clone)]
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>MatchFailed {
+    <span class="doccomment">/// The reason why we failed to match. Only present when debug_active true in call to
+    /// `get_match`.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) reason: <span class="prelude-ty">Option</span>&lt;String&gt;,
+}
+
+<span class="doccomment">/// Checks if `code` matches the search pattern found in `search_scope`, returning information about
+/// the match, if it does. Since we only do matching in this module and searching is done by the
+/// parent module, we don&#39;t populate nested matches.
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>get_match(
+    debug_active: bool,
+    rule: <span class="kw-2">&amp;</span>ResolvedRule,
+    code: <span class="kw-2">&amp;</span>SyntaxNode,
+    restrict_range: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;FileRange&gt;,
+    sema: <span class="kw-2">&amp;</span>Semantics&lt;<span class="lifetime">&#39;_</span>, ide_db::RootDatabase&gt;,
+) -&gt; <span class="prelude-ty">Result</span>&lt;Match, MatchFailed&gt; {
+    record_match_fails_reasons_scope(debug_active, || {
+        Matcher::try_match(rule, code, restrict_range, sema)
+    })
+}
+
+<span class="doccomment">/// Checks if our search pattern matches a particular node of the AST.
+</span><span class="kw">struct </span>Matcher&lt;<span class="lifetime">&#39;db</span>, <span class="lifetime">&#39;sema</span>&gt; {
+    sema: <span class="kw-2">&amp;</span><span class="lifetime">&#39;sema </span>Semantics&lt;<span class="lifetime">&#39;db</span>, ide_db::RootDatabase&gt;,
+    <span class="doccomment">/// If any placeholders come from anywhere outside of this range, then the match will be
+    /// rejected.
+    </span>restrict_range: <span class="prelude-ty">Option</span>&lt;FileRange&gt;,
+    rule: <span class="kw-2">&amp;</span><span class="lifetime">&#39;sema </span>ResolvedRule,
+}
+
+<span class="doccomment">/// Which phase of matching we&#39;re currently performing. We do two phases because most attempted
+/// matches will fail and it means we can defer more expensive checks to the second phase.
+</span><span class="kw">enum </span>Phase&lt;<span class="lifetime">&#39;a</span>&gt; {
+    <span class="doccomment">/// On the first phase, we perform cheap checks. No state is mutated and nothing is recorded.
+    </span>First,
+    <span class="doccomment">/// On the second phase, we construct the `Match`. Things like what placeholders bind to is
+    /// recorded.
+    </span>Second(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a </span><span class="kw-2">mut </span>Match),
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">&#39;db</span>, <span class="lifetime">&#39;sema</span>&gt; Matcher&lt;<span class="lifetime">&#39;db</span>, <span class="lifetime">&#39;sema</span>&gt; {
+    <span class="kw">fn </span>try_match(
+        rule: <span class="kw-2">&amp;</span>ResolvedRule,
+        code: <span class="kw-2">&amp;</span>SyntaxNode,
+        restrict_range: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;FileRange&gt;,
+        sema: <span class="kw-2">&amp;</span><span class="lifetime">&#39;sema </span>Semantics&lt;<span class="lifetime">&#39;db</span>, ide_db::RootDatabase&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;Match, MatchFailed&gt; {
+        <span class="kw">let </span>match_state = Matcher { sema, restrict_range: <span class="kw-2">*</span>restrict_range, rule };
+        <span class="comment">// First pass at matching, where we check that node types and idents match.
+        </span>match_state.attempt_match_node(<span class="kw-2">&amp;mut </span>Phase::First, <span class="kw-2">&amp;</span>rule.pattern.node, code)<span class="question-mark">?</span>;
+        match_state.validate_range(<span class="kw-2">&amp;</span>sema.original_range(code))<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>the_match = Match {
+            range: sema.original_range(code),
+            matched_node: code.clone(),
+            placeholder_values: FxHashMap::default(),
+            ignored_comments: Vec::new(),
+            rule_index: rule.index,
+            depth: <span class="number">0</span>,
+            rendered_template_paths: FxHashMap::default(),
+        };
+        <span class="comment">// Second matching pass, where we record placeholder matches, ignored comments and maybe do
+        // any other more expensive checks that we didn&#39;t want to do on the first pass.
+        </span>match_state.attempt_match_node(
+            <span class="kw-2">&amp;mut </span>Phase::Second(<span class="kw-2">&amp;mut </span>the_match),
+            <span class="kw-2">&amp;</span>rule.pattern.node,
+            code,
+        )<span class="question-mark">?</span>;
+        the_match.depth = sema.ancestors_with_macros(the_match.matched_node.clone()).count();
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(template) = <span class="kw-2">&amp;</span>rule.template {
+            the_match.render_template_paths(template, sema)<span class="question-mark">?</span>;
+        }
+        <span class="prelude-val">Ok</span>(the_match)
+    }
+
+    <span class="doccomment">/// Checks that `range` is within the permitted range if any. This is applicable when we&#39;re
+    /// processing a macro expansion and we want to fail the match if we&#39;re working with a node that
+    /// didn&#39;t originate from the token tree of the macro call.
+    </span><span class="kw">fn </span>validate_range(<span class="kw-2">&amp;</span><span class="self">self</span>, range: <span class="kw-2">&amp;</span>FileRange) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(restrict_range) = <span class="kw-2">&amp;</span><span class="self">self</span>.restrict_range {
+            <span class="kw">if </span>restrict_range.file_id != range.file_id
+                || !restrict_range.range.contains_range(range.range)
+            {
+                <span class="macro">fail_match!</span>(<span class="string">&quot;Node originated from a macro&quot;</span>);
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn </span>attempt_match_node(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="kw-2">&amp;</span>SyntaxNode,
+        code: <span class="kw-2">&amp;</span>SyntaxNode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="comment">// Handle placeholders.
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(placeholder) = <span class="self">self</span>.get_placeholder_for_node(pattern) {
+            <span class="kw">for </span>constraint <span class="kw">in </span><span class="kw-2">&amp;</span>placeholder.constraints {
+                <span class="self">self</span>.check_constraint(constraint, code)<span class="question-mark">?</span>;
+            }
+            <span class="kw">if let </span>Phase::Second(matches_out) = phase {
+                <span class="kw">let </span>original_range = <span class="self">self</span>.sema.original_range(code);
+                <span class="comment">// We validated the range for the node when we started the match, so the placeholder
+                // probably can&#39;t fail range validation, but just to be safe...
+                </span><span class="self">self</span>.validate_range(<span class="kw-2">&amp;</span>original_range)<span class="question-mark">?</span>;
+                matches_out.placeholder_values.insert(
+                    placeholder.ident.clone(),
+                    PlaceholderMatch::from_range(original_range),
+                );
+            }
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+        }
+        <span class="comment">// We allow a UFCS call to match a method call, provided they resolve to the same function.
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(pattern_ufcs) = <span class="self">self</span>.rule.pattern.ufcs_function_calls.get(pattern) {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(code) = ast::MethodCallExpr::cast(code.clone()) {
+                <span class="kw">return </span><span class="self">self</span>.attempt_match_ufcs_to_method_call(phase, pattern_ufcs, <span class="kw-2">&amp;</span>code);
+            }
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(code) = ast::CallExpr::cast(code.clone()) {
+                <span class="kw">return </span><span class="self">self</span>.attempt_match_ufcs_to_ufcs(phase, pattern_ufcs, <span class="kw-2">&amp;</span>code);
+            }
+        }
+        <span class="kw">if </span>pattern.kind() != code.kind() {
+            <span class="macro">fail_match!</span>(
+                <span class="string">&quot;Pattern had `{}` ({:?}), code had `{}` ({:?})&quot;</span>,
+                pattern.text(),
+                pattern.kind(),
+                code.text(),
+                code.kind()
+            );
+        }
+        <span class="comment">// Some kinds of nodes have special handling. For everything else, we fall back to default
+        // matching.
+        </span><span class="kw">match </span>code.kind() {
+            SyntaxKind::RECORD_EXPR_FIELD_LIST =&gt; {
+                <span class="self">self</span>.attempt_match_record_field_list(phase, pattern, code)
+            }
+            SyntaxKind::TOKEN_TREE =&gt; <span class="self">self</span>.attempt_match_token_tree(phase, pattern, code),
+            SyntaxKind::PATH =&gt; <span class="self">self</span>.attempt_match_path(phase, pattern, code),
+            <span class="kw">_ </span>=&gt; <span class="self">self</span>.attempt_match_node_children(phase, pattern, code),
+        }
+    }
+
+    <span class="kw">fn </span>attempt_match_node_children(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="kw-2">&amp;</span>SyntaxNode,
+        code: <span class="kw-2">&amp;</span>SyntaxNode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="self">self</span>.attempt_match_sequences(
+            phase,
+            PatternIterator::new(pattern),
+            code.children_with_tokens(),
+        )
+    }
+
+    <span class="kw">fn </span>attempt_match_sequences(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern_it: PatternIterator,
+        <span class="kw-2">mut </span>code_it: SyntaxElementChildren,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">let </span><span class="kw-2">mut </span>pattern_it = pattern_it.peekable();
+        <span class="kw">loop </span>{
+            <span class="kw">match </span>phase.next_non_trivial(<span class="kw-2">&amp;mut </span>code_it) {
+                <span class="prelude-val">None </span>=&gt; {
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(p) = pattern_it.next() {
+                        <span class="macro">fail_match!</span>(<span class="string">&quot;Part of the pattern was unmatched: {:?}&quot;</span>, p);
+                    }
+                    <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                }
+                <span class="prelude-val">Some</span>(SyntaxElement::Token(c)) =&gt; {
+                    <span class="self">self</span>.attempt_match_token(phase, <span class="kw-2">&amp;mut </span>pattern_it, <span class="kw-2">&amp;</span>c)<span class="question-mark">?</span>;
+                }
+                <span class="prelude-val">Some</span>(SyntaxElement::Node(c)) =&gt; <span class="kw">match </span>pattern_it.next() {
+                    <span class="prelude-val">Some</span>(SyntaxElement::Node(p)) =&gt; {
+                        <span class="self">self</span>.attempt_match_node(phase, <span class="kw-2">&amp;</span>p, <span class="kw-2">&amp;</span>c)<span class="question-mark">?</span>;
+                    }
+                    <span class="prelude-val">Some</span>(p) =&gt; <span class="macro">fail_match!</span>(<span class="string">&quot;Pattern wanted &#39;{}&#39;, code has {}&quot;</span>, p, c.text()),
+                    <span class="prelude-val">None </span>=&gt; <span class="macro">fail_match!</span>(<span class="string">&quot;Pattern reached end, code has {}&quot;</span>, c.text()),
+                },
+            }
+        }
+    }
+
+    <span class="kw">fn </span>attempt_match_token(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="kw-2">&amp;mut </span>Peekable&lt;PatternIterator&gt;,
+        code: <span class="kw-2">&amp;</span>syntax::SyntaxToken,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        phase.record_ignored_comments(code);
+        <span class="comment">// Ignore whitespace and comments.
+        </span><span class="kw">if </span>code.kind().is_trivia() {
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+        }
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(SyntaxElement::Token(p)) = pattern.peek() {
+            <span class="comment">// If the code has a comma and the pattern is about to close something, then accept the
+            // comma without advancing the pattern. i.e. ignore trailing commas.
+            </span><span class="kw">if </span>code.kind() == SyntaxKind::COMMA &amp;&amp; is_closing_token(p.kind()) {
+                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            }
+            <span class="comment">// Conversely, if the pattern has a comma and the code doesn&#39;t, skip that part of the
+            // pattern and continue to match the code.
+            </span><span class="kw">if </span>p.kind() == SyntaxKind::COMMA &amp;&amp; is_closing_token(code.kind()) {
+                pattern.next();
+            }
+        }
+        <span class="comment">// Consume an element from the pattern and make sure it matches.
+        </span><span class="kw">match </span>pattern.next() {
+            <span class="prelude-val">Some</span>(SyntaxElement::Token(p)) =&gt; {
+                <span class="kw">if </span>p.kind() != code.kind() || p.text() != code.text() {
+                    <span class="macro">fail_match!</span>(
+                        <span class="string">&quot;Pattern wanted token &#39;{}&#39; ({:?}), but code had token &#39;{}&#39; ({:?})&quot;</span>,
+                        p.text(),
+                        p.kind(),
+                        code.text(),
+                        code.kind()
+                    )
+                }
+            }
+            <span class="prelude-val">Some</span>(SyntaxElement::Node(p)) =&gt; {
+                <span class="comment">// Not sure if this is actually reachable.
+                </span><span class="macro">fail_match!</span>(
+                    <span class="string">&quot;Pattern wanted {:?}, but code had token &#39;{}&#39; ({:?})&quot;</span>,
+                    p,
+                    code.text(),
+                    code.kind()
+                );
+            }
+            <span class="prelude-val">None </span>=&gt; {
+                <span class="macro">fail_match!</span>(<span class="string">&quot;Pattern exhausted, while code remains: `{}`&quot;</span>, code.text());
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn </span>check_constraint(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        constraint: <span class="kw-2">&amp;</span>Constraint,
+        code: <span class="kw-2">&amp;</span>SyntaxNode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">match </span>constraint {
+            Constraint::Kind(kind) =&gt; {
+                kind.matches(code)<span class="question-mark">?</span>;
+            }
+            Constraint::Not(sub) =&gt; {
+                <span class="kw">if </span><span class="self">self</span>.check_constraint(<span class="kw-2">&amp;*</span>sub, code).is_ok() {
+                    <span class="macro">fail_match!</span>(<span class="string">&quot;Constraint {:?} failed for &#39;{}&#39;&quot;</span>, constraint, code.text());
+                }
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Paths are matched based on whether they refer to the same thing, even if they&#39;re written
+    /// differently.
+    </span><span class="kw">fn </span>attempt_match_path(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="kw-2">&amp;</span>SyntaxNode,
+        code: <span class="kw-2">&amp;</span>SyntaxNode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(pattern_resolved) = <span class="self">self</span>.rule.pattern.resolved_paths.get(pattern) {
+            <span class="kw">let </span>pattern_path = ast::Path::cast(pattern.clone()).unwrap();
+            <span class="kw">let </span>code_path = ast::Path::cast(code.clone()).unwrap();
+            <span class="kw">if let </span>(<span class="prelude-val">Some</span>(pattern_segment), <span class="prelude-val">Some</span>(code_segment)) =
+                (pattern_path.segment(), code_path.segment())
+            {
+                <span class="comment">// Match everything within the segment except for the name-ref, which is handled
+                // separately via comparing what the path resolves to below.
+                </span><span class="self">self</span>.attempt_match_opt(
+                    phase,
+                    pattern_segment.generic_arg_list(),
+                    code_segment.generic_arg_list(),
+                )<span class="question-mark">?</span>;
+                <span class="self">self</span>.attempt_match_opt(
+                    phase,
+                    pattern_segment.param_list(),
+                    code_segment.param_list(),
+                )<span class="question-mark">?</span>;
+            }
+            <span class="kw">if </span><span class="macro">matches!</span>(phase, Phase::Second(<span class="kw">_</span>)) {
+                <span class="kw">let </span>resolution = <span class="self">self
+                    </span>.sema
+                    .resolve_path(<span class="kw-2">&amp;</span>code_path)
+                    .ok_or_else(|| <span class="macro">match_error!</span>(<span class="string">&quot;Failed to resolve path `{}`&quot;</span>, code.text()))<span class="question-mark">?</span>;
+                <span class="kw">if </span>pattern_resolved.resolution != resolution {
+                    <span class="macro">fail_match!</span>(<span class="string">&quot;Pattern had path `{}` code had `{}`&quot;</span>, pattern.text(), code.text());
+                }
+            }
+        } <span class="kw">else </span>{
+            <span class="kw">return </span><span class="self">self</span>.attempt_match_node_children(phase, pattern, code);
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn </span>attempt_match_opt&lt;T: AstNode&gt;(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="prelude-ty">Option</span>&lt;T&gt;,
+        code: <span class="prelude-ty">Option</span>&lt;T&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">match </span>(pattern, code) {
+            (<span class="prelude-val">Some</span>(p), <span class="prelude-val">Some</span>(c)) =&gt; <span class="self">self</span>.attempt_match_node(phase, p.syntax(), c.syntax()),
+            (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="prelude-val">Ok</span>(()),
+            (<span class="prelude-val">Some</span>(p), <span class="prelude-val">None</span>) =&gt; <span class="macro">fail_match!</span>(<span class="string">&quot;Pattern `{}` had nothing to match&quot;</span>, p.syntax().text()),
+            (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(c)) =&gt; {
+                <span class="macro">fail_match!</span>(<span class="string">&quot;Nothing in pattern to match code `{}`&quot;</span>, c.syntax().text())
+            }
+        }
+    }
+
+    <span class="doccomment">/// We want to allow the records to match in any order, so we have special matching logic for
+    /// them.
+    </span><span class="kw">fn </span>attempt_match_record_field_list(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="kw-2">&amp;</span>SyntaxNode,
+        code: <span class="kw-2">&amp;</span>SyntaxNode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="comment">// Build a map keyed by field name.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>fields_by_name: FxHashMap&lt;SmolStr, SyntaxNode&gt; = FxHashMap::default();
+        <span class="kw">for </span>child <span class="kw">in </span>code.children() {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(record) = ast::RecordExprField::cast(child.clone()) {
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(name) = record.field_name() {
+                    fields_by_name.insert(name.text().into(), child.clone());
+                }
+            }
+        }
+        <span class="kw">for </span>p <span class="kw">in </span>pattern.children_with_tokens() {
+            <span class="kw">if let </span>SyntaxElement::Node(p) = p {
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(name_element) = p.first_child_or_token() {
+                    <span class="kw">if </span><span class="self">self</span>.get_placeholder(<span class="kw-2">&amp;</span>name_element).is_some() {
+                        <span class="comment">// If the pattern is using placeholders for field names then order
+                        // independence doesn&#39;t make sense. Fall back to regular ordered
+                        // matching.
+                        </span><span class="kw">return </span><span class="self">self</span>.attempt_match_node_children(phase, pattern, code);
+                    }
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(ident) = only_ident(name_element) {
+                        <span class="kw">let </span>code_record = fields_by_name.remove(ident.text()).ok_or_else(|| {
+                            <span class="macro">match_error!</span>(
+                                <span class="string">&quot;Placeholder has record field &#39;{}&#39;, but code doesn&#39;t&quot;</span>,
+                                ident
+                            )
+                        })<span class="question-mark">?</span>;
+                        <span class="self">self</span>.attempt_match_node(phase, <span class="kw-2">&amp;</span>p, <span class="kw-2">&amp;</span>code_record)<span class="question-mark">?</span>;
+                    }
+                }
+            }
+        }
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(unmatched_fields) = fields_by_name.keys().next() {
+            <span class="macro">fail_match!</span>(
+                <span class="string">&quot;{} field(s) of a record literal failed to match, starting with {}&quot;</span>,
+                fields_by_name.len(),
+                unmatched_fields
+            );
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Outside of token trees, a placeholder can only match a single AST node, whereas in a token
+    /// tree it can match a sequence of tokens. Note, that this code will only be used when the
+    /// pattern matches the macro invocation. For matches within the macro call, we&#39;ll already have
+    /// expanded the macro.
+    </span><span class="kw">fn </span>attempt_match_token_tree(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern: <span class="kw-2">&amp;</span>SyntaxNode,
+        code: <span class="kw-2">&amp;</span>syntax::SyntaxNode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">let </span><span class="kw-2">mut </span>pattern = PatternIterator::new(pattern).peekable();
+        <span class="kw">let </span><span class="kw-2">mut </span>children = code.children_with_tokens();
+        <span class="kw">while let </span><span class="prelude-val">Some</span>(child) = children.next() {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(placeholder) = pattern.peek().and_then(|p| <span class="self">self</span>.get_placeholder(p)) {
+                pattern.next();
+                <span class="kw">let </span>next_pattern_token = pattern
+                    .peek()
+                    .and_then(|p| <span class="kw">match </span>p {
+                        SyntaxElement::Token(t) =&gt; <span class="prelude-val">Some</span>(t.clone()),
+                        SyntaxElement::Node(n) =&gt; n.first_token(),
+                    })
+                    .map(|p| p.text().to_string());
+                <span class="kw">let </span>first_matched_token = child.clone();
+                <span class="kw">let </span><span class="kw-2">mut </span>last_matched_token = child;
+                <span class="comment">// Read code tokens util we reach one equal to the next token from our pattern
+                // or we reach the end of the token tree.
+                </span><span class="kw">for </span>next <span class="kw">in </span><span class="kw-2">&amp;mut </span>children {
+                    <span class="kw">match </span><span class="kw-2">&amp;</span>next {
+                        SyntaxElement::Token(t) =&gt; {
+                            <span class="kw">if </span><span class="prelude-val">Some</span>(t.to_string()) == next_pattern_token {
+                                pattern.next();
+                                <span class="kw">break</span>;
+                            }
+                        }
+                        SyntaxElement::Node(n) =&gt; {
+                            <span class="kw">if let </span><span class="prelude-val">Some</span>(first_token) = n.first_token() {
+                                <span class="kw">if </span><span class="prelude-val">Some</span>(first_token.text()) == next_pattern_token.as_deref() {
+                                    <span class="kw">if let </span><span class="prelude-val">Some</span>(SyntaxElement::Node(p)) = pattern.next() {
+                                        <span class="comment">// We have a subtree that starts with the next token in our pattern.
+                                        </span><span class="self">self</span>.attempt_match_token_tree(phase, <span class="kw-2">&amp;</span>p, n)<span class="question-mark">?</span>;
+                                        <span class="kw">break</span>;
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    last_matched_token = next;
+                }
+                <span class="kw">if let </span>Phase::Second(match_out) = phase {
+                    match_out.placeholder_values.insert(
+                        placeholder.ident.clone(),
+                        PlaceholderMatch::from_range(FileRange {
+                            file_id: <span class="self">self</span>.sema.original_range(code).file_id,
+                            range: first_matched_token
+                                .text_range()
+                                .cover(last_matched_token.text_range()),
+                        }),
+                    );
+                }
+                <span class="kw">continue</span>;
+            }
+            <span class="comment">// Match literal (non-placeholder) tokens.
+            </span><span class="kw">match </span>child {
+                SyntaxElement::Token(token) =&gt; {
+                    <span class="self">self</span>.attempt_match_token(phase, <span class="kw-2">&amp;mut </span>pattern, <span class="kw-2">&amp;</span>token)<span class="question-mark">?</span>;
+                }
+                SyntaxElement::Node(node) =&gt; <span class="kw">match </span>pattern.next() {
+                    <span class="prelude-val">Some</span>(SyntaxElement::Node(p)) =&gt; {
+                        <span class="self">self</span>.attempt_match_token_tree(phase, <span class="kw-2">&amp;</span>p, <span class="kw-2">&amp;</span>node)<span class="question-mark">?</span>;
+                    }
+                    <span class="prelude-val">Some</span>(SyntaxElement::Token(p)) =&gt; <span class="macro">fail_match!</span>(
+                        <span class="string">&quot;Pattern has token &#39;{}&#39;, code has subtree &#39;{}&#39;&quot;</span>,
+                        p.text(),
+                        node.text()
+                    ),
+                    <span class="prelude-val">None </span>=&gt; <span class="macro">fail_match!</span>(<span class="string">&quot;Pattern has nothing, code has &#39;{}&#39;&quot;</span>, node.text()),
+                },
+            }
+        }
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(p) = pattern.next() {
+            <span class="macro">fail_match!</span>(<span class="string">&quot;Reached end of token tree in code, but pattern still has {:?}&quot;</span>, p);
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn </span>attempt_match_ufcs_to_method_call(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern_ufcs: <span class="kw-2">&amp;</span>UfcsCallInfo,
+        code: <span class="kw-2">&amp;</span>ast::MethodCallExpr,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">use </span>ast::HasArgList;
+        <span class="kw">let </span>code_resolved_function = <span class="self">self
+            </span>.sema
+            .resolve_method_call(code)
+            .ok_or_else(|| <span class="macro">match_error!</span>(<span class="string">&quot;Failed to resolve method call&quot;</span>))<span class="question-mark">?</span>;
+        <span class="kw">if </span>pattern_ufcs.function != code_resolved_function {
+            <span class="macro">fail_match!</span>(<span class="string">&quot;Method call resolved to a different function&quot;</span>);
+        }
+        <span class="comment">// Check arguments.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>pattern_args = pattern_ufcs
+            .call_expr
+            .arg_list()
+            .ok_or_else(|| <span class="macro">match_error!</span>(<span class="string">&quot;Pattern function call has no args&quot;</span>))<span class="question-mark">?
+            </span>.args();
+        <span class="comment">// If the function we&#39;re calling takes a self parameter, then we store additional
+        // information on the placeholder match about autoderef and autoref. This allows us to use
+        // the placeholder in a context where autoderef and autoref don&#39;t apply.
+        </span><span class="kw">if </span>code_resolved_function.self_param(<span class="self">self</span>.sema.db).is_some() {
+            <span class="kw">if let </span>(<span class="prelude-val">Some</span>(pattern_type), <span class="prelude-val">Some</span>(expr)) =
+                (<span class="kw-2">&amp;</span>pattern_ufcs.qualifier_type, <span class="kw-2">&amp;</span>code.receiver())
+            {
+                <span class="kw">let </span>deref_count = <span class="self">self</span>.check_expr_type(pattern_type, expr)<span class="question-mark">?</span>;
+                <span class="kw">let </span>pattern_receiver = pattern_args.next();
+                <span class="self">self</span>.attempt_match_opt(phase, pattern_receiver.clone(), code.receiver())<span class="question-mark">?</span>;
+                <span class="kw">if let </span>Phase::Second(match_out) = phase {
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(placeholder_value) = pattern_receiver
+                        .and_then(|n| <span class="self">self</span>.get_placeholder_for_node(n.syntax()))
+                        .and_then(|placeholder| {
+                            match_out.placeholder_values.get_mut(<span class="kw-2">&amp;</span>placeholder.ident)
+                        })
+                    {
+                        placeholder_value.autoderef_count = deref_count;
+                        placeholder_value.autoref_kind = <span class="self">self
+                            </span>.sema
+                            .resolve_method_call_as_callable(code)
+                            .and_then(|callable| callable.receiver_param(<span class="self">self</span>.sema.db))
+                            .map(|self_param| self_param.kind())
+                            .unwrap_or(ast::SelfParamKind::Owned);
+                    }
+                }
+            }
+        } <span class="kw">else </span>{
+            <span class="self">self</span>.attempt_match_opt(phase, pattern_args.next(), code.receiver())<span class="question-mark">?</span>;
+        }
+        <span class="kw">let </span><span class="kw-2">mut </span>code_args =
+            code.arg_list().ok_or_else(|| <span class="macro">match_error!</span>(<span class="string">&quot;Code method call has no args&quot;</span>))<span class="question-mark">?</span>.args();
+        <span class="kw">loop </span>{
+            <span class="kw">match </span>(pattern_args.next(), code_args.next()) {
+                (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+                (p, c) =&gt; <span class="self">self</span>.attempt_match_opt(phase, p, c)<span class="question-mark">?</span>,
+            }
+        }
+    }
+
+    <span class="kw">fn </span>attempt_match_ufcs_to_ufcs(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        phase: <span class="kw-2">&amp;mut </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt;,
+        pattern_ufcs: <span class="kw-2">&amp;</span>UfcsCallInfo,
+        code: <span class="kw-2">&amp;</span>ast::CallExpr,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">use </span>ast::HasArgList;
+        <span class="comment">// Check that the first argument is the expected type.
+        </span><span class="kw">if let </span>(<span class="prelude-val">Some</span>(pattern_type), <span class="prelude-val">Some</span>(expr)) = (
+            <span class="kw-2">&amp;</span>pattern_ufcs.qualifier_type,
+            <span class="kw-2">&amp;</span>code.arg_list().and_then(|code_args| code_args.args().next()),
+        ) {
+            <span class="self">self</span>.check_expr_type(pattern_type, expr)<span class="question-mark">?</span>;
+        }
+        <span class="self">self</span>.attempt_match_node_children(phase, pattern_ufcs.call_expr.syntax(), code.syntax())
+    }
+
+    <span class="doccomment">/// Verifies that `expr` matches `pattern_type`, possibly after dereferencing some number of
+    /// times. Returns the number of times it needed to be dereferenced.
+    </span><span class="kw">fn </span>check_expr_type(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        pattern_type: <span class="kw-2">&amp;</span>hir::Type,
+        expr: <span class="kw-2">&amp;</span>ast::Expr,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;usize, MatchFailed&gt; {
+        <span class="kw">use </span>hir::HirDisplay;
+        <span class="kw">let </span>code_type = <span class="self">self
+            </span>.sema
+            .type_of_expr(expr)
+            .ok_or_else(|| {
+                <span class="macro">match_error!</span>(<span class="string">&quot;Failed to get receiver type for `{}`&quot;</span>, expr.syntax().text())
+            })<span class="question-mark">?
+            </span>.original;
+        <span class="comment">// Temporary needed to make the borrow checker happy.
+        </span><span class="kw">let </span>res = code_type
+            .autoderef(<span class="self">self</span>.sema.db)
+            .enumerate()
+            .find(|(<span class="kw">_</span>, deref_code_type)| pattern_type == deref_code_type)
+            .map(|(count, <span class="kw">_</span>)| count)
+            .ok_or_else(|| {
+                <span class="macro">match_error!</span>(
+                    <span class="string">&quot;Pattern type `{}` didn&#39;t match code type `{}`&quot;</span>,
+                    pattern_type.display(<span class="self">self</span>.sema.db),
+                    code_type.display(<span class="self">self</span>.sema.db)
+                )
+            });
+        res
+    }
+
+    <span class="kw">fn </span>get_placeholder_for_node(<span class="kw-2">&amp;</span><span class="self">self</span>, node: <span class="kw-2">&amp;</span>SyntaxNode) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Placeholder&gt; {
+        <span class="self">self</span>.get_placeholder(<span class="kw-2">&amp;</span>SyntaxElement::Node(node.clone()))
+    }
+
+    <span class="kw">fn </span>get_placeholder(<span class="kw-2">&amp;</span><span class="self">self</span>, element: <span class="kw-2">&amp;</span>SyntaxElement) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Placeholder&gt; {
+        only_ident(element.clone()).and_then(|ident| <span class="self">self</span>.rule.get_placeholder(<span class="kw-2">&amp;</span>ident))
+    }
+}
+
+<span class="kw">impl </span>Match {
+    <span class="kw">fn </span>render_template_paths(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        template: <span class="kw-2">&amp;</span>ResolvedPattern,
+        sema: <span class="kw-2">&amp;</span>Semantics&lt;<span class="lifetime">&#39;_</span>, ide_db::RootDatabase&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">let </span>module = sema
+            .scope(<span class="kw-2">&amp;</span><span class="self">self</span>.matched_node)
+            .ok_or_else(|| <span class="macro">match_error!</span>(<span class="string">&quot;Matched node isn&#39;t in a module&quot;</span>))<span class="question-mark">?
+            </span>.module();
+        <span class="kw">for </span>(path, resolved_path) <span class="kw">in </span><span class="kw-2">&amp;</span>template.resolved_paths {
+            <span class="kw">if let </span>hir::PathResolution::Def(module_def) = resolved_path.resolution {
+                <span class="kw">let </span>mod_path =
+                    module.find_use_path(sema.db, module_def, <span class="bool-val">false</span>).ok_or_else(|| {
+                        <span class="macro">match_error!</span>(<span class="string">&quot;Failed to render template path `{}` at match location&quot;</span>)
+                    })<span class="question-mark">?</span>;
+                <span class="self">self</span>.rendered_template_paths.insert(path.clone(), mod_path);
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+}
+
+<span class="kw">impl </span>Phase&lt;<span class="lifetime">&#39;_</span>&gt; {
+    <span class="kw">fn </span>next_non_trivial(<span class="kw-2">&amp;mut </span><span class="self">self</span>, code_it: <span class="kw-2">&amp;mut </span>SyntaxElementChildren) -&gt; <span class="prelude-ty">Option</span>&lt;SyntaxElement&gt; {
+        <span class="kw">loop </span>{
+            <span class="kw">let </span>c = code_it.next();
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(SyntaxElement::Token(t)) = <span class="kw-2">&amp;</span>c {
+                <span class="self">self</span>.record_ignored_comments(t);
+                <span class="kw">if </span>t.kind().is_trivia() {
+                    <span class="kw">continue</span>;
+                }
+            }
+            <span class="kw">return </span>c;
+        }
+    }
+
+    <span class="kw">fn </span>record_ignored_comments(<span class="kw-2">&amp;mut </span><span class="self">self</span>, token: <span class="kw-2">&amp;</span>SyntaxToken) {
+        <span class="kw">if </span>token.kind() == SyntaxKind::COMMENT {
+            <span class="kw">if let </span>Phase::Second(match_out) = <span class="self">self </span>{
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(comment) = ast::Comment::cast(token.clone()) {
+                    match_out.ignored_comments.push(comment);
+                }
+            }
+        }
+    }
+}
+
+<span class="kw">fn </span>is_closing_token(kind: SyntaxKind) -&gt; bool {
+    kind == SyntaxKind::R_PAREN || kind == SyntaxKind::R_CURLY || kind == SyntaxKind::R_BRACK
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>record_match_fails_reasons_scope&lt;F, T&gt;(debug_active: bool, f: F) -&gt; T
+<span class="kw">where
+    </span>F: Fn() -&gt; T,
+{
+    RECORDING_MATCH_FAIL_REASONS.with(|c| c.set(debug_active));
+    <span class="kw">let </span>res = f();
+    RECORDING_MATCH_FAIL_REASONS.with(|c| c.set(<span class="bool-val">false</span>));
+    res
+}
+
+<span class="comment">// For performance reasons, we don&#39;t want to record the reason why every match fails, only the bit
+// of code that the user indicated they thought would match. We use a thread local to indicate when
+// we are trying to match that bit of code. This saves us having to pass a boolean into all the bits
+// of code that can make the decision to not match.
+</span><span class="macro">thread_local! </span>{
+    <span class="kw">pub static </span>RECORDING_MATCH_FAIL_REASONS: Cell&lt;bool&gt; = Cell::new(<span class="bool-val">false</span>);
+}
+
+<span class="kw">fn </span>recording_match_fail_reasons() -&gt; bool {
+    RECORDING_MATCH_FAIL_REASONS.with(|c| c.get())
+}
+
+<span class="kw">impl </span>PlaceholderMatch {
+    <span class="kw">fn </span>from_range(range: FileRange) -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{
+            range,
+            inner_matches: SsrMatches::default(),
+            autoderef_count: <span class="number">0</span>,
+            autoref_kind: ast::SelfParamKind::Owned,
+        }
+    }
+}
+
+<span class="kw">impl </span>NodeKind {
+    <span class="kw">fn </span>matches(<span class="kw-2">&amp;</span><span class="self">self</span>, node: <span class="kw-2">&amp;</span>SyntaxNode) -&gt; <span class="prelude-ty">Result</span>&lt;(), MatchFailed&gt; {
+        <span class="kw">let </span>ok = <span class="kw">match </span><span class="self">self </span>{
+            <span class="self">Self</span>::Literal =&gt; {
+                <span class="macro">cov_mark::hit!</span>(literal_constraint);
+                ast::Literal::can_cast(node.kind())
+            }
+        };
+        <span class="kw">if </span>!ok {
+            <span class="macro">fail_match!</span>(<span class="string">&quot;Code &#39;{}&#39; isn&#39;t of kind {:?}&quot;</span>, node.text(), <span class="self">self</span>);
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+}
+
+<span class="comment">// If `node` contains nothing but an ident then return it, otherwise return None.
+</span><span class="kw">fn </span>only_ident(element: SyntaxElement) -&gt; <span class="prelude-ty">Option</span>&lt;SyntaxToken&gt; {
+    <span class="kw">match </span>element {
+        SyntaxElement::Token(t) =&gt; {
+            <span class="kw">if </span>t.kind() == SyntaxKind::IDENT {
+                <span class="kw">return </span><span class="prelude-val">Some</span>(t);
+            }
+        }
+        SyntaxElement::Node(n) =&gt; {
+            <span class="kw">let </span><span class="kw-2">mut </span>children = n.children_with_tokens();
+            <span class="kw">if let </span>(<span class="prelude-val">Some</span>(only_child), <span class="prelude-val">None</span>) = (children.next(), children.next()) {
+                <span class="kw">return </span>only_ident(only_child);
+            }
+        }
+    }
+    <span class="prelude-val">None
+</span>}
+
+<span class="kw">struct </span>PatternIterator {
+    iter: SyntaxElementChildren,
+}
+
+<span class="kw">impl </span>Iterator <span class="kw">for </span>PatternIterator {
+    <span class="kw">type </span>Item = SyntaxElement;
+
+    <span class="kw">fn </span>next(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;SyntaxElement&gt; {
+        <span class="kw">for </span>element <span class="kw">in </span><span class="kw-2">&amp;mut </span><span class="self">self</span>.iter {
+            <span class="kw">if </span>!element.kind().is_trivia() {
+                <span class="kw">return </span><span class="prelude-val">Some</span>(element);
+            }
+        }
+        <span class="prelude-val">None
+    </span>}
+}
+
+<span class="kw">impl </span>PatternIterator {
+    <span class="kw">fn </span>new(parent: <span class="kw-2">&amp;</span>SyntaxNode) -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{ iter: parent.children_with_tokens() }
+    }
+}
+
+<span class="attribute">#[cfg(test)]
+</span><span class="kw">mod </span>tests {
+    <span class="kw">use crate</span>::{MatchFinder, SsrRule};
+
+    <span class="attribute">#[test]
+    </span><span class="kw">fn </span>parse_match_replace() {
+        <span class="kw">let </span>rule: SsrRule = <span class="string">&quot;foo($x) ==&gt;&gt; bar($x)&quot;</span>.parse().unwrap();
+        <span class="kw">let </span>input = <span class="string">&quot;fn foo() {} fn bar() {} fn main() { foo(1+2); }&quot;</span>;
+
+        <span class="kw">let </span>(db, position, selections) = <span class="kw">crate</span>::tests::single_file(input);
+        <span class="kw">let </span><span class="kw-2">mut </span>match_finder = MatchFinder::in_context(<span class="kw-2">&amp;</span>db, position, selections).unwrap();
+        match_finder.add_rule(rule).unwrap();
+        <span class="kw">let </span>matches = match_finder.matches();
+        <span class="macro">assert_eq!</span>(matches.matches.len(), <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(matches.matches[<span class="number">0</span>].matched_node.text(), <span class="string">&quot;foo(1+2)&quot;</span>);
+        <span class="macro">assert_eq!</span>(matches.matches[<span class="number">0</span>].placeholder_values.len(), <span class="number">1</span>);
+
+        <span class="kw">let </span>edits = match_finder.edits();
+        <span class="macro">assert_eq!</span>(edits.len(), <span class="number">1</span>);
+        <span class="kw">let </span>edit = <span class="kw-2">&amp;</span>edits[<span class="kw-2">&amp;</span>position.file_id];
+        <span class="kw">let </span><span class="kw-2">mut </span>after = input.to_string();
+        edit.apply(<span class="kw-2">&amp;mut </span>after);
+        <span class="macro">assert_eq!</span>(after, <span class="string">&quot;fn foo() {} fn bar() {} fn main() { bar(1+2); }&quot;</span>);
+    }
+}
+</code></pre></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="ide_ssr" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.66.0 (69f9c33d7 2022-12-12)" ></div></body></html>
